@@ -28,8 +28,9 @@ It's a Rust rewrite of [go-dispatch-proxy](https://github.com/extremecoders-re/g
 - **Two kinds of links.** Combine local network adapters, or use `-tunnel` to combine upstream SOCKS5 proxies such as `ssh -D` tunnels to several servers.
 - **Weighted least-connections balancing.** Each new connection goes to the link with the lowest `(active + 1) / weight`, so a 3:1 weighting really carries three times the connections.
 - **Hands-off mode.** With `-auto` it finds every connection that can reach the internet by itself, and adds or drops links as cables, Wi-Fi and tethered phones come and go, **without restarting and without cutting open connections**. With `-system-proxy` it also switches the Windows proxy setting on and off for you.
-- **Racing links.** If a link hasn't connected within 300 ms, the next link is tried alongside it and the first to connect wins. A flaky link costs a fraction of a second, not a timeout.
-- **Automatic failover.** If a link fails, the next one is tried right away. A link that fails or loses races twice in a row is skipped for 10 seconds and is used again as soon as it works.
+- **Racing links.** If a link hasn't connected within 300 ms (or 3× its usual connect time, if that's longer), the next link is tried alongside it and the first to connect wins. A flaky link costs a fraction of a second, not a timeout. The losing attempt finishes in the background, so a link that's only slower isn't punished, while one that hangs still times out and gets skipped.
+- **Automatic failover.** If a link fails, the next one is tried right away. A link that fails twice in a row is skipped for 10 seconds and is used again as soon as it works.
+- **Live status page.** Open `http://127.0.0.1:8080/status` to see each link's download and upload speed, open connections, connect time and failures, updated every second.
 - **Fast failure.** It uses a 4-second connect timeout instead of the ~21-second Windows default.
 - **Traffic stays on the adapter you chose.** Outgoing sockets are pinned to the adapter itself (`IP_UNICAST_IF` / `SO_BINDTODEVICE`), not just to its IP address.
 - **Small and quiet.** It's a single static binary with no config file and no per-connection logging unless you ask for it.
@@ -102,6 +103,8 @@ That's all. Here's what it does:
 - **Finds the links itself:** it uses every adapter that has a gateway to the internet.
 - **Follows network changes:** when a connection joins or drops, it updates the links within a few seconds. Open connections aren't cut.
 - **Manages the Windows proxy setting:** the setting is on while at least 2 connections are up (`-min-links` changes that number). It turns off when fewer are up, and when you stop the proxy with Ctrl+C or by closing its window.
+
+To see it working, open **http://127.0.0.1:8080/status** in a browser. It shows each connection's live speed and how many connections each one carries.
 
 If the program is force-killed (Task Manager, `taskkill /f`), it can't switch the setting off. Start it again or turn the setting off under **Settings → Network & internet → Proxy**.
 
@@ -206,7 +209,8 @@ rust-dispatch-proxy [options] -tunnel HOST:PORT[@weight] [HOST:PORT[@weight] ...
 | `-tunnel` | off | Links are upstream SOCKS5 proxies (`HOST:PORT`) instead of local addresses. See [Tunnel mode](#tunnel-mode-combining-socks5-proxies). |
 | `-list` | | List usable local IPv4 addresses and exit. |
 | `-quiet` | | No log output. |
-| `-verbose` | | Log every connection and which link it used. |
+| `-verbose` | | Log every connection, which link it used and how long it took to connect. |
+| `-log FILE` | | Write the log to `FILE` instead of the console. The file starts fresh each run. Lines are timestamped. |
 | `-version` | | Print the version and exit. |
 | `-help` | | Show usage. |
 
@@ -234,7 +238,7 @@ Existing go-dispatch-proxy command lines, including `-tunnel`, work unchanged.
 To start it hidden at log-on, save this as `rust-dispatch-proxy.vbs` in your Startup folder. Press Win+R, type `shell:startup` and press Enter to open it.
 
 ```vb
-CreateObject("Wscript.Shell").Run """C:\Tools\rust-dispatch-proxy\rust-dispatch-proxy.exe"" -auto -system-proxy -quiet", 0, False
+CreateObject("Wscript.Shell").Run """C:\Tools\rust-dispatch-proxy\rust-dispatch-proxy.exe"" -auto -system-proxy -log ""C:\Tools\rust-dispatch-proxy\proxy.log""", 0, False
 ```
 
 With `-auto` the command line never needs updating when your local addresses change. To stop it, end `rust-dispatch-proxy.exe` in Task Manager, then switch the proxy setting off (see [the easy way](#the-easy-way-windows)).
@@ -274,7 +278,7 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 | `Could not start local server on 127.0.0.1:8080` | Something else is using the port. Pick another with `-lport`. |
 | `TUN mode stopped: ... needs administrator rights` | Run the terminal as administrator. |
 | `wintun.dll not found at ...` | Put `wintun.dll` for your CPU architecture next to the `.exe`. |
-| Only one link ever shows traffic | Check that each address belongs to a *different* adapter with its own gateway, and that the app opens more than one connection. Run with `-verbose` to see which link each connection uses. |
+| Only one link ever shows traffic | Check that each address belongs to a *different* adapter with its own gateway, and that the app opens more than one connection. The [status page](http://127.0.0.1:8080/status) shows how connections are spread. |
 | A link keeps being "skipped for 10 s" | That connection is failing to reach the internet, or is much slower than the others. Check it on its own. |
 | Apps have no internet after the proxy stopped | It was force-killed while `-system-proxy` had the setting on. Start the proxy again, or turn the setting off under **Settings → Network & internet → Proxy**. |
 | `-auto` doesn't use an adapter | Only adapters with a default gateway count. Check that the adapter shows a gateway in `ipconfig`. |
@@ -286,6 +290,8 @@ src/
 ├── main.rs       CLI, load balancer and link racing, SOCKS5 server and upstream client, protocol detection
 ├── auto.rs       -auto: finding adapters with internet access and following network changes
 ├── sysproxy.rs   -system-proxy: the Windows proxy setting
+├── status.rs     The status page (/status and /status.json)
+├── log.rs        Timestamped log output (console or -log file)
 ├── http.rs       HTTP proxy (CONNECT and plain-HTTP forwarding)
 ├── net.rs        Sockets pinned to a specific network adapter
 └── tun_mode.rs   System-wide mode: Wintun adapter, routes, user-space TCP/IP stack

@@ -14,9 +14,19 @@ All notable changes to this project are documented here. The format follows
   `-min-links` links (default 2) are up, off otherwise, and off on Ctrl+C or
   when the console is closed. Replaces a separate watcher script.
 - Link racing (`-race MS`, default 300): if a link hasn't connected within
-  the delay, the next link starts alongside it and the first to connect wins.
-  A link that loses to a later attempt counts as a failure, so a hanging link
-  goes into cooldown instead of slowing every new connection.
+  the delay (or 3x its usual connect time, if longer), the next link starts
+  alongside it and the first to connect wins. Losing attempts finish in the
+  background and report their real outcome, so a slower link is never
+  punished for losing, while a hanging one still times out into cooldown.
+- Status page at `http://127.0.0.1:8080/status` (and `/status.json`): live
+  per-link speed, open connections, connect time, failures and totals.
+- `-log FILE`, and timestamps on every log line.
+
+### Performance
+- Copy buffers raised from 64 KB to 256 KB per direction, and one worker
+  thread per CPU core instead of two. On loopback this moves 31 Gbit/s
+  instead of 15 across 8 streams, so the proxy stays far from being the
+  bottleneck.
 
 ### Changed
 - Moved to the Rust 2024 edition. Building from source now needs Rust 1.85

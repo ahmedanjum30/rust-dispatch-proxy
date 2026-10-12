@@ -44,16 +44,18 @@ use std::pin::Pin;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
-use std::task::Poll;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
 mod auto;
 mod http;
+mod log;
 mod net;
+mod status;
 #[cfg(windows)]
 mod sysproxy;
 #[cfg(feature = "tun")]
@@ -65,10 +67,17 @@ use net::Egress;
 
 pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const DNS_TIMEOUT: Duration = Duration::from_secs(10);
-pub(crate) const COPY_BUFFER: usize = 64 * 1024;
+/// Per direction, per connection. Measured on loopback: 256 KB moves about
+/// 1.5x the data of 64 KB per CPU second, so the proxy itself stays far from
+/// being the bottleneck.
+pub(crate) const COPY_BUFFER: usize = 256 * 1024;
 const FAILS_BEFORE_COOLDOWN: u32 = 2;
 const COOLDOWN_MS: u64 = 10_000;
 const DEFAULT_RACE_MS: u64 = 300;
+/// A link is raced after the race delay or this many times its usual
+/// connect time, whichever is longer, so a link that is merely slower than
+/// the others still gets to win its own connections.
+const RACE_LATENCY_FACTOR: u64 = 3;
 
 // SOCKS5 reply codes
 const REP_SUCCESS: u8 = 0x00;
@@ -86,13 +95,13 @@ static QUIET: AtomicBool = AtomicBool::new(false);
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 
 macro_rules! info {
-    ($($t:tt)*) => { if !QUIET.load(Relaxed) { eprintln!("[INFO] {}", format!($($t)*)); } };
+    ($($t:tt)*) => { if !QUIET.load(Relaxed) { log::emit("INFO", format_args!($($t)*)); } };
 }
 macro_rules! warn {
-    ($($t:tt)*) => { if !QUIET.load(Relaxed) { eprintln!("[WARN] {}", format!($($t)*)); } };
+    ($($t:tt)*) => { if !QUIET.load(Relaxed) { log::emit("WARN", format_args!($($t)*)); } };
 }
 macro_rules! debug {
-    ($($t:tt)*) => { if VERBOSE.load(Relaxed) && !QUIET.load(Relaxed) { eprintln!("[DEBUG] {}", format!($($t)*)); } };
+    ($($t:tt)*) => { if VERBOSE.load(Relaxed) && !QUIET.load(Relaxed) { log::emit("DEBUG", format_args!($($t)*)); } };
 }
 
 #[cfg_attr(not(any(windows, feature = "tun")), allow(dead_code))]
@@ -144,10 +153,17 @@ impl std::fmt::Display for Via {
 
 pub(crate) struct Link {
     pub(crate) via: Via,
-    weight: u64,
-    active: AtomicUsize,
+    pub(crate) weight: u64,
+    pub(crate) active: AtomicUsize,
     consecutive_fails: AtomicU32,
-    down_until_ms: AtomicU64,
+    pub(crate) down_until_ms: AtomicU64,
+    /// Smoothed time to connect, in microseconds (0 = not measured yet).
+    pub(crate) connect_us: AtomicU64,
+    // Totals for the status page.
+    pub(crate) connections: AtomicU64,
+    pub(crate) failures: AtomicU64,
+    pub(crate) bytes_up: AtomicU64,
+    pub(crate) bytes_down: AtomicU64,
 }
 
 impl Link {
@@ -158,20 +174,35 @@ impl Link {
             active: AtomicUsize::new(0),
             consecutive_fails: AtomicU32::new(0),
             down_until_ms: AtomicU64::new(0),
+            connect_us: AtomicU64::new(0),
+            connections: AtomicU64::new(0),
+            failures: AtomicU64::new(0),
+            bytes_up: AtomicU64::new(0),
+            bytes_down: AtomicU64::new(0),
         }
     }
 
-    fn report_success(&self) {
+    fn report_success(&self, took: Duration) {
         self.consecutive_fails.store(0, Relaxed);
         self.down_until_ms.store(0, Relaxed);
+        let sample = (took.as_micros() as u64).max(1);
+        let old = self.connect_us.load(Relaxed);
+        // Moving average over roughly the last 8 connections.
+        self.connect_us.store(if old == 0 { sample } else { (old * 7 + sample) / 8 }, Relaxed);
     }
 
     fn report_failure(&self) {
+        self.failures.fetch_add(1, Relaxed);
         let fails = self.consecutive_fails.fetch_add(1, Relaxed) + 1;
         if fails >= FAILS_BEFORE_COOLDOWN {
             self.down_until_ms.store(now_ms() + COOLDOWN_MS, Relaxed);
             warn!("{} failed {} times in a row, skipping it for {} s", self.via, fails, COOLDOWN_MS / 1000);
         }
+    }
+
+    /// How long to give this link before starting the next one alongside it.
+    fn race_delay(&self, base: Duration) -> Duration {
+        base.max(Duration::from_micros(self.connect_us.load(Relaxed) * RACE_LATENCY_FACTOR))
     }
 }
 
@@ -201,6 +232,55 @@ impl ActiveGuard {
 impl Drop for ActiveGuard {
     fn drop(&mut self) {
         self.0.active.fetch_sub(1, Relaxed);
+    }
+}
+
+/// An open connection through a link. Counts its traffic towards the link,
+/// and keeps the link's active-connection count up for as long as it lives.
+pub(crate) struct Conn {
+    stream: TcpStream,
+    guard: ActiveGuard,
+}
+
+impl Conn {
+    pub(crate) fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.stream.local_addr()
+    }
+
+    #[cfg(test)]
+    fn link(&self) -> &Arc<Link> {
+        &self.guard.0
+    }
+}
+
+impl AsyncRead for Conn {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let before = buf.filled().len();
+        let result = Pin::new(&mut this.stream).poll_read(cx, buf);
+        if let Poll::Ready(Ok(())) = result {
+            this.guard.0.bytes_down.fetch_add((buf.filled().len() - before) as u64, Relaxed);
+        }
+        result
+    }
+}
+
+impl AsyncWrite for Conn {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, data: &[u8]) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        let result = Pin::new(&mut this.stream).poll_write(cx, data);
+        if let Poll::Ready(Ok(n)) = result {
+            this.guard.0.bytes_up.fetch_add(n as u64, Relaxed);
+        }
+        result
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
     }
 }
 
@@ -277,6 +357,7 @@ impl Balancer {
 
 // ---------------------------------------------------------------- SOCKS5
 
+#[derive(Clone)]
 pub(crate) enum Target {
     Ip(SocketAddrV4),
     Domain(String, u16),
@@ -499,21 +580,21 @@ async fn route_client(client: TcpStream, balancer: Arc<Balancer>) {
     }
 }
 
-/// One connection attempt in flight: which link, in which order it started,
-/// and its result once done.
-type Attempt<'t> = Pin<Box<dyn Future<Output = (usize, usize, ActiveGuard, Result<TcpStream, Failure>)> + Send + 't>>;
+/// One connection attempt in flight. Its guard holds the link; it yields how
+/// long the attempt took and its result.
+type Attempt = Pin<Box<dyn Future<Output = (ActiveGuard, Duration, Result<TcpStream, Failure>)> + Send>>;
 
 /// Connects to `target` through the balancer. Used by the SOCKS5 and HTTP
-/// handlers and by TUN mode. The returned guard keeps the link's
-/// active-connection count up while it is alive.
+/// handlers and by TUN mode.
 ///
 /// Links race: the best link is tried first; if it has not connected within
-/// the race delay, or fails, the next link is started alongside it, and the
-/// first to connect wins (the others are cancelled). A link that loses to an
-/// attempt started after it was slower than that link plus the race delay,
-/// and counts as a failure, so a link that hangs ends up in cooldown instead
-/// of slowing down every new connection.
-pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<(TcpStream, ActiveGuard)> {
+/// its race delay (the -race delay, or 3x its usual connect time if that is
+/// longer), or fails, the next link is started alongside it, and the first
+/// to connect wins. Attempts that lost keep running in the background and
+/// report how they really ended, so a link that is merely slower than the
+/// winner is not punished, while one that hangs still times out and ends up
+/// in cooldown.
+pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Conn> {
     let links = balancer.links();
     if links.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NetworkUnreachable, "no internet connections available"));
@@ -532,10 +613,9 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<(Tc
     };
 
     let mut tried = vec![false; links.len()];
-    let mut racing: Vec<Attempt<'_>> = Vec::new();
-    let mut started: Vec<(usize, usize)> = Vec::new(); // (link, order) of each attempt in `racing`
-    let mut next_order = 0;
-    let mut last_launch = tokio::time::Instant::now();
+    let mut racing: Vec<Attempt> = Vec::new();
+    let mut attempts = 0;
+    let mut race_at = tokio::time::Instant::now();
     let mut last_err: Option<io::Error> = None;
 
     // Each pass starts the next link (if any is left), then waits for an
@@ -543,22 +623,24 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<(Tc
     loop {
         if let Some(i) = balancer.pick(&links, &tried) {
             tried[i] = true;
-            let link = links[i].clone();
-            let guard = ActiveGuard::new(&link);
-            let dst = (!dests.is_empty()).then(|| dests[next_order % dests.len()]);
-            let order = next_order;
+            let link = &links[i];
+            let guard = ActiveGuard::new(link);
+            let dst = (!dests.is_empty()).then(|| dests[attempts % dests.len()]);
             let limit = balancer.connect_timeout;
+            let target = target.clone();
             racing.push(Box::pin(async move {
-                let result = match (&link.via, dst) {
+                let started = Instant::now();
+                let result = match (&guard.0.via, dst) {
                     (Via::Adapter(egress), Some(dst)) => connect_via(egress, dst, limit).await,
                     (Via::Adapter(_), None) => Err(Failure::Link(io::Error::other("no address to connect to"))),
-                    (Via::Upstream(up), _) => connect_upstream(up, target, limit).await,
+                    (Via::Upstream(up), _) => connect_upstream(up, &target, limit).await,
                 };
-                (i, order, guard, result)
+                (guard, started.elapsed(), result)
             }));
-            started.push((i, order));
-            next_order += 1;
-            last_launch = tokio::time::Instant::now();
+            attempts += 1;
+            if let Some(base) = balancer.race_delay {
+                race_at = tokio::time::Instant::now() + link.race_delay(base);
+            }
         }
         if racing.is_empty() {
             break;
@@ -575,34 +657,31 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<(Tc
             Poll::Pending
         });
         let more_links = tried.iter().any(|t| !t);
-        let (pos, (i, order, guard, result)) = match balancer.race_delay.filter(|_| more_links) {
-            Some(delay) => match tokio::time::timeout_at(last_launch + delay, first_done).await {
+        let (pos, (guard, took, result)) = if balancer.race_delay.is_some() && more_links {
+            match tokio::time::timeout_at(race_at, first_done).await {
                 Ok(done) => done,
                 Err(_) => continue, // slow: start the next link alongside
-            },
-            None => first_done.await,
+            }
+        } else {
+            first_done.await
         };
         drop(racing.swap_remove(pos));
-        started.swap_remove(pos);
-        let link = &links[i];
+        let link = &guard.0;
 
         match result {
-            Ok(remote) => {
-                link.report_success();
-                for &(other, other_order) in &started {
-                    if other_order < order {
-                        // Still connecting although it started earlier: too slow.
-                        debug!("{target}: {} was slower than {}", links[other].via, link.via);
-                        links[other].report_failure();
-                    }
+            Ok(stream) => {
+                link.report_success(took);
+                link.connections.fetch_add(1, Relaxed);
+                for other in racing.drain(..) {
+                    tokio::spawn(settle(other));
                 }
-                let _ = remote.set_nodelay(true);
-                debug!("{target} -> via {}", link.via);
-                return Ok((remote, guard)); // dropping `racing` cancels the rest
+                let _ = stream.set_nodelay(true);
+                debug!("{target} -> via {} ({} ms)", link.via, took.as_millis());
+                return Ok(Conn { stream, guard });
             }
             Err(Failure::Refused(e)) => {
                 debug!("{target} refused the connection");
-                return Err(e);
+                return Err(e); // every link would get the same answer
             }
             Err(Failure::Remote(e)) => {
                 debug!("{target} via {} failed: {e}", link.via);
@@ -616,6 +695,20 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<(Tc
         }
     }
     Err(last_err.unwrap_or_else(|| io::Error::other("no links available")))
+}
+
+/// Lets an attempt that lost a race finish, and judges its link by how it
+/// really ended. A connection that does get made is closed straight away.
+async fn settle(attempt: Attempt) {
+    let (guard, took, result) = attempt.await;
+    match result {
+        Ok(_) => guard.0.report_success(took),
+        Err(Failure::Link(e)) => {
+            debug!("{} failed after losing a race: {e}", guard.0.via);
+            guard.0.report_failure();
+        }
+        Err(_) => {}
+    }
 }
 
 async fn handle_socks(mut client: TcpStream, balancer: Arc<Balancer>) {
@@ -634,7 +727,7 @@ async fn handle_socks(mut client: TcpStream, balancer: Arc<Balancer>) {
         }
     };
 
-    let (mut remote, _guard) = match dial(&balancer, &target).await {
+    let mut remote = match dial(&balancer, &target).await {
         Ok(ok) => ok,
         Err(e) => {
             let _ = send_reply(&mut client, reply_code_for(&e), None).await;
@@ -652,7 +745,7 @@ async fn handle_socks(mut client: TcpStream, balancer: Arc<Balancer>) {
 
     // Relay both directions; handles half-close correctly.
     let _ = tokio::io::copy_bidirectional_with_sizes(&mut client, &mut remote, COPY_BUFFER, COPY_BUFFER).await;
-    // `_guard` drops here, decrementing the link's active count.
+    // `remote` drops here, which decrements the link's active count.
 }
 
 // ---------------------------------------------------------------- CLI
@@ -750,8 +843,11 @@ fn usage() -> ! {
          \x20 -list           list usable local IPv4 addresses and exit\n\
          \x20 -quiet          no log output\n\
          \x20 -verbose        log every connection\n\
+         \x20 -log FILE       write the log to FILE instead of the console\n\
          \x20 -version        print the version and exit\n\
          \x20 -help           show this help\n\
+         \n\
+         Status page: open http://127.0.0.1:8080/status (your -lhost/-lport) in a browser.\n\
          \n\
          Examples:\n\
          \x20 rust-dispatch-proxy 192.168.1.10@3 10.0.0.5@1\n\
@@ -763,7 +859,7 @@ fn usage() -> ! {
 }
 
 fn fatal(msg: String) -> ! {
-    eprintln!("[FATAL] {msg}");
+    log::emit("FATAL", format_args!("{msg}"));
     exit(1);
 }
 
@@ -779,6 +875,7 @@ fn parse_args() -> Config {
         enabled: false,
         min_links: 2,
     };
+    let mut log_path: Option<String> = None;
     let mut specs = Vec::new();
 
     let mut args = std::env::args().skip(1);
@@ -830,6 +927,7 @@ fn parse_args() -> Config {
                     }
                     system_proxy.enabled = true;
                 }
+                "log" => log_path = Some(value("log")),
                 "min-links" => {
                     let v = value("min-links");
                     system_proxy.min_links = v.parse().unwrap_or_else(|_| fatal(format!("Invalid number {v}")));
@@ -865,6 +963,9 @@ fn parse_args() -> Config {
         }
     }
 
+    if let Some(path) = &log_path {
+        log::to_file(path).unwrap_or_else(|e| fatal(format!("Could not open log file {path}: {e}")));
+    }
     if tun && tunnel {
         fatal("-tun cannot be combined with -tunnel (TUN mode also forwards UDP, which SOCKS tunnels cannot carry)".into());
     }
@@ -982,10 +1083,11 @@ fn upstream_links(specs: &[String]) -> Vec<(Via, u64)> {
 // ---------------------------------------------------------------- main
 
 fn main() {
+    now_ms(); // start the uptime clock
     let cfg = parse_args();
 
+    // One worker thread per CPU core (tokio's default): measured fastest.
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
         .enable_io()
         .enable_time()
         .build()
@@ -1048,7 +1150,7 @@ fn main() {
                 tokio::spawn(async move {
                     if let Err(e) = tun_mode::run(balancer).await {
                         // Keep the proxy running even if TUN mode fails.
-                        eprintln!("[ERROR] TUN mode stopped: {e}. The SOCKS5/HTTP proxy is still running.");
+                        log::emit("ERROR", format_args!("TUN mode stopped: {e}. The SOCKS5/HTTP proxy is still running."));
                     }
                 });
             }
@@ -1141,7 +1243,7 @@ mod tests {
         // If the only other link was already tried, the cooling link is still used
         assert_eq!(b.pick(&links, &[false, true]), Some(0));
         // A success clears the cooldown
-        links[0].report_success();
+        links[0].report_success(Duration::ZERO);
         let picks: Vec<_> = (0..10).map(|_| b.pick(&links, &[false, false]).unwrap()).collect();
         assert!(picks.contains(&0));
     }
@@ -1287,20 +1389,22 @@ mod tests {
         }
     }
 
-    /// An upstream that accepts any number of IPv4 CONNECT requests.
-    async fn working_upstream() -> Upstream {
+    /// An upstream that accepts any number of IPv4 CONNECT requests, each
+    /// after `delay` (a working link that is just slower).
+    async fn working_upstream_after(delay: Duration) -> Upstream {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
             while let Ok((mut s, _)) = listener.accept().await {
                 tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
                     let mut greeting = [0u8; 3];
                     s.read_exact(&mut greeting).await.unwrap();
                     s.write_all(&[5, 0]).await.unwrap();
                     let mut req = [0u8; 10];
                     s.read_exact(&mut req).await.unwrap();
                     s.write_all(&[5, REP_SUCCESS, 0, 1, 0, 0, 0, 0, 0, 0]).await.unwrap();
-                    let _ = s.read(&mut [0u8; 1]).await; // hold until the client closes
+                    let _ = s.read(&mut [0u8; 64]).await; // hold until the client closes
                 });
             }
         });
@@ -1308,6 +1412,10 @@ mod tests {
             host: "127.0.0.1".into(),
             port,
         }
+    }
+
+    async fn working_upstream() -> Upstream {
+        working_upstream_after(Duration::ZERO).await
     }
 
     fn upstream_balancer(ups: Vec<Upstream>, connect_timeout: Duration, race: Option<Duration>) -> Balancer {
@@ -1319,54 +1427,84 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slow_link_is_raced_by_the_next_one() {
+    async fn hung_link_is_raced_and_then_judged_by_its_timeout() {
         // The hung link is picked first; the race starts the working one
-        // after 100 ms instead of waiting out the 5 s connect timeout.
+        // after 50 ms instead of waiting out the connect timeout.
         let b = upstream_balancer(
             vec![hung_upstream().await, working_upstream().await],
-            Duration::from_secs(5),
-            Some(Duration::from_millis(100)),
-        );
-        let links = b.links();
-        let started = Instant::now();
-        let (_stream, guard) = dial(&b, &some_target()).await.expect("dial failed");
-        assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
-
-        assert!(Arc::ptr_eq(&guard.0, &links[1]));
-        assert_eq!(links[1].active.load(Relaxed), 1);
-        // The losing attempt was cancelled and counted as one failure.
-        assert_eq!(links[0].active.load(Relaxed), 0);
-        assert_eq!(links[0].consecutive_fails.load(Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn hung_link_ends_up_in_cooldown() {
-        let b = upstream_balancer(
-            vec![hung_upstream().await, working_upstream().await],
-            Duration::from_secs(5),
+            Duration::from_millis(400),
             Some(Duration::from_millis(50)),
         );
         let links = b.links();
-        let mut open = Vec::new();
-        // Close each connection before the next, so the hung link (fewest
-        // connections) keeps being picked first until it cools down.
-        for _ in 0..FAILS_BEFORE_COOLDOWN {
-            open.push(dial(&b, &some_target()).await.expect("dial failed"));
-            open.clear();
+        let started = Instant::now();
+        let conn = dial(&b, &some_target()).await.expect("dial failed");
+        assert!(started.elapsed() < Duration::from_millis(300), "took {:?}", started.elapsed());
+        assert!(Arc::ptr_eq(conn.link(), &links[1]));
+
+        // The losing attempt is still running, so not judged yet...
+        assert_eq!(links[0].consecutive_fails.load(Relaxed), 0);
+        assert_eq!(links[0].active.load(Relaxed), 1);
+        // ...until its own connect timeout runs out.
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(links[0].consecutive_fails.load(Relaxed), 1);
+        assert_eq!(links[0].failures.load(Relaxed), 1);
+        assert_eq!(links[0].active.load(Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn slow_link_that_loses_a_race_is_not_punished() {
+        let b = upstream_balancer(
+            vec![working_upstream_after(Duration::from_millis(150)).await, working_upstream().await],
+            Duration::from_secs(2),
+            Some(Duration::from_millis(50)),
+        );
+        let links = b.links();
+        let conn = dial(&b, &some_target()).await.expect("dial failed");
+        assert!(Arc::ptr_eq(conn.link(), &links[1]));
+
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        // It did connect in the end: a success, with its connect time learned.
+        assert_eq!(links[0].consecutive_fails.load(Relaxed), 0);
+        assert_eq!(links[0].failures.load(Relaxed), 0);
+        assert!(links[0].connect_us.load(Relaxed) >= 150_000);
+        assert_eq!(links[0].active.load(Relaxed), 0);
+    }
+
+    #[test]
+    fn race_delay_follows_each_links_connect_time() {
+        let link = Link::new(adapter(1), 1);
+        let base = Duration::from_millis(300);
+        assert_eq!(link.race_delay(base), base); // nothing measured yet
+        link.report_success(Duration::from_millis(40));
+        assert_eq!(link.race_delay(base), base); // fast link: the base delay
+        for _ in 0..30 {
+            link.report_success(Duration::from_millis(250));
         }
-        assert!(links[0].down_until_ms.load(Relaxed) > now_ms());
-        for _ in 0..10 {
-            assert_eq!(b.pick(&links, &[false, false]), Some(1));
-        }
+        // A link that usually takes ~250 ms gets ~750 ms before it is raced.
+        let d = link.race_delay(base);
+        assert!(d > Duration::from_millis(700) && d <= Duration::from_millis(750), "{d:?}");
+    }
+
+    #[tokio::test]
+    async fn traffic_and_connections_are_counted() {
+        let b = upstream_balancer(vec![working_upstream().await], Duration::from_secs(2), None);
+        let link = b.links()[0].clone();
+        let mut conn = dial(&b, &some_target()).await.expect("dial failed");
+        conn.write_all(b"hello").await.unwrap();
+        assert_eq!(link.bytes_up.load(Relaxed), 5);
+        assert_eq!(link.connections.load(Relaxed), 1);
+        assert_eq!(link.active.load(Relaxed), 1);
+        drop(conn);
+        assert_eq!(link.active.load(Relaxed), 0);
     }
 
     #[tokio::test]
     async fn without_racing_the_slow_link_times_out_first() {
         let b = upstream_balancer(vec![hung_upstream().await, working_upstream().await], Duration::from_millis(300), None);
         let started = Instant::now();
-        let (_stream, guard) = dial(&b, &some_target()).await.expect("dial failed");
+        let conn = dial(&b, &some_target()).await.expect("dial failed");
         assert!(started.elapsed() >= Duration::from_millis(300));
-        assert!(Arc::ptr_eq(&guard.0, &b.links()[1]));
+        assert!(Arc::ptr_eq(conn.link(), &b.links()[1]));
     }
 
     #[tokio::test]

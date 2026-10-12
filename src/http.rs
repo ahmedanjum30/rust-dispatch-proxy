@@ -135,13 +135,26 @@ pub(crate) fn parse_request(head: &str) -> Result<ParsedRequest, &'static str> {
     })
 }
 
-async fn respond_error(client: &mut TcpStream, status: &str) {
-    let body = format!("rust-dispatch-proxy: {status}\n");
+async fn respond(client: &mut TcpStream, status: &str, content_type: &str, body: &str) {
     let msg = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     let _ = client.write_all(msg.as_bytes()).await;
+}
+
+async fn respond_error(client: &mut TcpStream, status: &str) {
+    respond(client, status, "text/plain", &format!("rust-dispatch-proxy: {status}\n")).await;
+}
+
+/// A request for the proxy's own status page rather than a website.
+fn status_page(head: &str) -> Option<&'static str> {
+    let mut parts = head.split("\r\n").next()?.split(' ');
+    match (parts.next()?, parts.next()?) {
+        ("GET", "/" | "/status" | "/status/") => Some("text/html; charset=utf-8"),
+        ("GET", "/status.json") => Some("application/json"),
+        _ => None,
+    }
 }
 
 pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>) {
@@ -156,6 +169,16 @@ pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>) 
         return;
     };
     let early_body = &buf[head_len..];
+
+    if let Some(content_type) = status_page(head) {
+        let body = if content_type == "application/json" {
+            crate::status::json(&balancer)
+        } else {
+            crate::status::PAGE.to_string()
+        };
+        respond(&mut client, "200 OK", content_type, &body).await;
+        return;
+    }
 
     let request = match parse_request(head) {
         Ok(r) => r,
@@ -174,7 +197,7 @@ pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>) 
         Err(_) => Target::Domain(host, port),
     };
 
-    let (mut remote, _guard) = match dial(&balancer, &target).await {
+    let mut remote = match dial(&balancer, &target).await {
         Ok(ok) => ok,
         Err(e) => {
             let status = if e.kind() == io::ErrorKind::TimedOut {
@@ -252,6 +275,15 @@ mod tests {
             };
             assert!(String::from_utf8(head).unwrap().starts_with(expect), "{url}");
         }
+    }
+
+    #[test]
+    fn status_page_requests() {
+        assert_eq!(status_page("GET /status HTTP/1.1\r\n\r\n"), Some("text/html; charset=utf-8"));
+        assert_eq!(status_page("GET / HTTP/1.1\r\n\r\n"), Some("text/html; charset=utf-8"));
+        assert_eq!(status_page("GET /status.json HTTP/1.1\r\n\r\n"), Some("application/json"));
+        assert_eq!(status_page("GET http://example.com/status HTTP/1.1\r\n\r\n"), None); // a website's page
+        assert_eq!(status_page("POST /status HTTP/1.1\r\n\r\n"), None);
     }
 
     #[test]

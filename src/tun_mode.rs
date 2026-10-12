@@ -130,7 +130,7 @@ async fn handle_tcp(mut flow: IpStackTcpStream, balancer: Arc<Balancer>) {
         return;
     }
     // On failure the flow is dropped, which resets the app's connection.
-    let Ok((mut remote, _guard)) = dial(&balancer, &Target::Ip(dst)).await else {
+    let Ok(mut remote) = dial(&balancer, &Target::Ip(dst)).await else {
         return;
     };
     let _ = tokio::io::copy_bidirectional_with_sizes(&mut flow, &mut remote, COPY_BUFFER, COPY_BUFFER).await;
