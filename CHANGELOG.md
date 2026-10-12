@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-12
+
 ### Added
 - `-auto`: use every adapter that can reach the internet, and add or drop
   links as the network changes, without restarting or cutting open
@@ -32,6 +34,8 @@ All notable changes to this project are documented here. The format follows
   per open connection.
 
 ### Changed
+- TUN mode: UDP flows such as QUIC (HTTP/3) now count towards a link's load,
+  so new connections go to less busy links, and they show on the status page.
 - Moved to the Rust 2024 edition. Building from source now needs Rust 1.85
   or newer.
 
@@ -61,5 +65,6 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/tag/v1.0.0

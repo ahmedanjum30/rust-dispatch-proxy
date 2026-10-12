@@ -106,7 +106,7 @@ That's all. Here's what it does:
 
 To see it working, open **http://127.0.0.1:8080/status** in a browser. It shows each connection's live speed and how many connections each one carries.
 
-If the program is force-killed (Task Manager, `taskkill /f`), it can't switch the setting off. Start it again or turn the setting off under **Settings → Network & internet → Proxy**.
+If the program is force-killed (Task Manager, `taskkill /f`), it can't switch the setting off. Logging off or shutting down may leave it on too. If the proxy starts at login (see [Running at startup](#running-at-startup-windows)), that's harmless: it sets the setting again a moment after you log in. Otherwise, start the proxy again or turn the setting off under **Settings → Network & internet → Proxy**.
 
 ### Choosing the connections yourself
 
@@ -264,7 +264,7 @@ Register-ScheduledTask -TaskName "rust-dispatch-proxy" -Action $action -Trigger 
 
 ## Security
 
-The proxy has **no authentication**. By default it listens only on `127.0.0.1`, so only programs on your own machine can use it. If you set `-lhost 0.0.0.0` to share your connections with other devices on your network, anyone who can reach that port can use your internet connection. Only do this on a network you trust, and block the port at your firewall from anywhere else. The program prints a warning when it listens on a non-loopback address.
+The proxy has **no authentication**. By default it listens only on `127.0.0.1`, so only programs on your own machine can use it. If you set `-lhost 0.0.0.0` to share your connections with other devices on your network, anyone who can reach that port can use your internet connection. Only do this on a network you trust, and block the port at your firewall from anywhere else. Anyone who can reach the port can also see the status page, which shows your connections' local addresses and traffic. The program prints a warning when it listens on a non-loopback address.
 
 HTTPS traffic is relayed as-is. The proxy never sees or changes encrypted content.
 

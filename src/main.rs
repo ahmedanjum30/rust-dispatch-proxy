@@ -223,7 +223,7 @@ pub(crate) struct Balancer {
 pub(crate) struct ActiveGuard(Arc<Link>);
 
 impl ActiveGuard {
-    fn new(link: &Arc<Link>) -> Self {
+    pub(crate) fn new(link: &Arc<Link>) -> Self {
         link.active.fetch_add(1, Relaxed);
         ActiveGuard(link.clone())
     }

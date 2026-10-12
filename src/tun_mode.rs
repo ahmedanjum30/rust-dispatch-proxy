@@ -18,6 +18,7 @@
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::Duration;
 
 use ipstack::{IpStackStream, IpStackTcpStream, IpStackUdpStream};
@@ -25,7 +26,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
 use crate::net;
-use crate::{Balancer, COPY_BUFFER, Target, Via, dial};
+use crate::{ActiveGuard, Balancer, COPY_BUFFER, Target, Via, dial};
 
 pub const TUN_NAME: &str = "DispatchProxy";
 const TUN_ADDR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
@@ -151,7 +152,7 @@ async fn handle_udp(mut flow: IpStackUdpStream, balancer: Arc<Balancer>) {
     // Pin this flow to one link, failing over if a socket can't be set up.
     let links = balancer.links();
     let mut tried = vec![false; links.len()];
-    let mut socket = None;
+    let mut chosen = None;
     while let Some(i) = balancer.pick(&links, &tried) {
         tried[i] = true;
         // TUN mode is never combined with -tunnel, so links are adapters.
@@ -159,7 +160,7 @@ async fn handle_udp(mut flow: IpStackUdpStream, balancer: Arc<Balancer>) {
         match net::udp_socket(egress) {
             Ok(s) => match s.connect(SocketAddr::V4(dst)).await {
                 Ok(()) => {
-                    socket = Some(s);
+                    chosen = Some((s, links[i].clone()));
                     break;
                 }
                 Err(e) => crate::log_debug(format!("UDP {dst} via {} failed: {e}", egress.ip)),
@@ -167,9 +168,18 @@ async fn handle_udp(mut flow: IpStackUdpStream, balancer: Arc<Balancer>) {
             Err(e) => crate::log_debug(format!("UDP socket on {} failed: {e}", egress.ip)),
         }
     }
-    let Some(socket) = socket else { return };
+    let Some((socket, link)) = chosen else { return };
 
-    let idle = if dst.port() == 53 { DNS_IDLE_TIMEOUT } else { UDP_IDLE_TIMEOUT };
+    // UDP flows such as QUIC (HTTP/3) count towards the link's load like TCP
+    // connections, so new connections go to less busy links. DNS lookups are
+    // too brief to matter.
+    let is_dns = dst.port() == 53;
+    let _guard = (!is_dns).then(|| {
+        link.connections.fetch_add(1, Relaxed);
+        ActiveGuard::new(&link)
+    });
+
+    let idle = if is_dns { DNS_IDLE_TIMEOUT } else { UDP_IDLE_TIMEOUT };
     let mut from_app = vec![0u8; 65_535];
     let mut from_remote = vec![0u8; 65_535];
 
@@ -187,8 +197,10 @@ async fn handle_udp(mut flow: IpStackUdpStream, balancer: Arc<Balancer>) {
                 if socket.send(&from_app[..n]).await.is_err() {
                     break;
                 }
+                link.bytes_up.fetch_add(n as u64, Relaxed);
             }
             Ok(UdpEvent::FromRemote(Ok(n))) => {
+                link.bytes_down.fetch_add(n as u64, Relaxed);
                 if flow.write(&from_remote[..n]).await.is_err() {
                     break;
                 }
