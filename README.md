@@ -17,6 +17,10 @@ Free for personal and other non-commercial use. See [License](#license).
                         └──────────────────────────┘      └── Phone USB ─► 4G/5G
 ```
 
+![Status page: three connections downloading at 57, 91 and 98 Mbit/s, 246 Mbit/s in total](docs/status-page.png)
+
+*The built-in status page (`http://127.0.0.1:8080/status`) during a download: three home connections carrying 246 Mbit/s together.*
+
 It's a Rust rewrite of [go-dispatch-proxy](https://github.com/extremecoders-re/go-dispatch-proxy) that keeps its command line (`-lhost`, `-lport`, `-list`, `-tunnel`, `IP@ratio`), with smarter balancing, automatic failover, an HTTP proxy, and an optional system-wide mode. See [Coming from go-dispatch-proxy](#coming-from-go-dispatch-proxy).
 
 ---
