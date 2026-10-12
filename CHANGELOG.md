@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `-auto`: use every adapter that can reach the internet, and add or drop
+  links as the network changes, without restarting or cutting open
+  connections. Event-driven on Windows (no polling); Linux checks every 5 s.
+- `-system-proxy` (Windows): turn the system proxy setting on while at least
+  `-min-links` links (default 2) are up, off otherwise, and off on Ctrl+C or
+  when the console is closed. Replaces a separate watcher script.
+- Link racing (`-race MS`, default 300): if a link hasn't connected within
+  the delay, the next link starts alongside it and the first to connect wins.
+  A link that loses to a later attempt counts as a failure, so a hanging link
+  goes into cooldown instead of slowing every new connection.
+
 ### Changed
 - Moved to the Rust 2024 edition. Building from source now needs Rust 1.85
   or newer.

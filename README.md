@@ -27,7 +27,9 @@ It's a Rust rewrite of [go-dispatch-proxy](https://github.com/extremecoders-re/g
   - **TUN mode** (`-tun`) adds a virtual network adapter that captures **all IPv4 traffic from every app**, TCP and UDP, with no per-app setup.
 - **Two kinds of links.** Combine local network adapters, or use `-tunnel` to combine upstream SOCKS5 proxies such as `ssh -D` tunnels to several servers.
 - **Weighted least-connections balancing.** Each new connection goes to the link with the lowest `(active + 1) / weight`, so a 3:1 weighting really carries three times the connections.
-- **Automatic failover.** If a link can't connect, the next one is tried right away. A link that fails twice in a row is skipped for 10 seconds and is used again as soon as it works.
+- **Hands-off mode.** With `-auto` it finds every connection that can reach the internet by itself, and adds or drops links as cables, Wi-Fi and tethered phones come and go, **without restarting and without cutting open connections**. With `-system-proxy` it also switches the Windows proxy setting on and off for you.
+- **Racing links.** If a link hasn't connected within 300 ms, the next link is tried alongside it and the first to connect wins. A flaky link costs a fraction of a second, not a timeout.
+- **Automatic failover.** If a link fails, the next one is tried right away. A link that fails or loses races twice in a row is skipped for 10 seconds and is used again as soon as it works.
 - **Fast failure.** It uses a 4-second connect timeout instead of the ~21-second Windows default.
 - **Traffic stays on the adapter you chose.** Outgoing sockets are pinned to the adapter itself (`IP_UNICAST_IF` / `SO_BINDTODEVICE`), not just to its IP address.
 - **Small and quiet.** It's a single static binary with no config file and no per-connection logging unless you ask for it.
@@ -37,7 +39,9 @@ It's a Rust rewrite of [go-dispatch-proxy](https://github.com/extremecoders-re/g
 ```
  new connection ─► pick link with lowest (active+1)/weight ─► connect through that adapter
                          │                                        │
-                         │◄──────── failed? try next link ◄───────┘
+                         │◄── failed, or not connected after ─────┘
+                         │    300 ms? start the next link too;
+                         │    first to connect wins
                          ▼
                    relay bytes both ways until either side closes
 ```
@@ -82,7 +86,28 @@ For TUN mode on Windows, download Wintun from [wintun.net](https://www.wintun.ne
 
 ## Quick start
 
-**1. Connect all your internet connections**, for example Ethernet plus a USB-tethered phone, and find their local IPv4 addresses:
+### The easy way (Windows)
+
+Connect all your internet connections, for example Ethernet plus a USB-tethered phone, then run:
+
+```
+> rust-dispatch-proxy -auto -system-proxy
+[INFO] Link 1: 192.168.1.10 (Ethernet), weight 1
+[INFO] Link 2: 192.168.43.25 (Wi-Fi), weight 1
+[INFO] Proxy started at 127.0.0.1:8080 (SOCKS5 and HTTP)
+[INFO] Windows proxy setting ON
+```
+
+That's all. Here's what it does:
+- **Finds the links itself:** it uses every adapter that has a gateway to the internet.
+- **Follows network changes:** when a connection joins or drops, it updates the links within a few seconds. Open connections aren't cut.
+- **Manages the Windows proxy setting:** the setting is on while at least 2 connections are up (`-min-links` changes that number). It turns off when fewer are up, and when you stop the proxy with Ctrl+C or by closing its window.
+
+If the program is force-killed (Task Manager, `taskkill /f`), it can't switch the setting off. Start it again or turn the setting off under **Settings → Network & internet → Proxy**.
+
+### Choosing the connections yourself
+
+**1. Connect all your internet connections** and find their local IPv4 addresses:
 
 ```
 > rust-dispatch-proxy -list
@@ -115,7 +140,9 @@ curl -x http://127.0.0.1:8080   https://example.com
 
 ### Option B: Windows proxy setting
 
-Open **Settings → Network & internet → Proxy → Manual proxy setup**, turn on **Use a proxy server**, and enter address `127.0.0.1`, port `8080`. Browsers and other apps that follow the system proxy are now balanced. Turn the setting off again when you stop the proxy, or those apps will lose their internet connection.
+Add `-system-proxy` and the program manages the setting for you (see [the easy way](#the-easy-way-windows)).
+
+To set it by hand instead, open **Settings → Network & internet → Proxy → Manual proxy setup**, turn on **Use a proxy server**, and enter address `127.0.0.1`, port `8080`. Browsers and other apps that follow the system proxy are now balanced. Turn the setting off again when you stop the proxy, or those apps will lose their internet connection.
 
 ### Option C: TUN mode, everything on the system
 
@@ -170,7 +197,11 @@ rust-dispatch-proxy [options] -tunnel HOST:PORT[@weight] [HOST:PORT[@weight] ...
 |---|---|---|
 | `-lhost ADDR` | `127.0.0.1` | Address to listen on. See [Security](#security) before changing it. |
 | `-lport PORT` | `8080` | Port for the SOCKS5 and HTTP proxy. |
+| `-auto` | off | Use every adapter that can reach the internet, and follow network changes while running. Don't pass addresses with it. Windows and Linux. |
+| `-system-proxy` | off | Windows: turn the system proxy setting on while there are enough links, off when there aren't, and off on exit. |
+| `-min-links N` | `2` | How many links `-system-proxy` needs before it turns the setting on. |
 | `-timeout SECS` | `4` | Connect timeout per link before failing over. Fractions are allowed (`2.5`). |
+| `-race MS` | `300` | If a link hasn't connected within this many milliseconds, start the next link alongside it. `0` turns racing off. |
 | `-tun` | off | Also capture all system IPv4 traffic through a virtual adapter. |
 | `-tunnel` | off | Links are upstream SOCKS5 proxies (`HOST:PORT`) instead of local addresses. See [Tunnel mode](#tunnel-mode-combining-socks5-proxies). |
 | `-list` | | List usable local IPv4 addresses and exit. |
@@ -200,16 +231,22 @@ Existing go-dispatch-proxy command lines, including `-tunnel`, work unchanged.
 
 ## Running at startup (Windows)
 
-To start it automatically at log-on, including TUN mode, which needs admin rights, create a scheduled task from an administrator PowerShell:
+To start it hidden at log-on, save this as `rust-dispatch-proxy.vbs` in your Startup folder. Press Win+R, type `shell:startup` and press Enter to open it.
+
+```vb
+CreateObject("Wscript.Shell").Run """C:\Tools\rust-dispatch-proxy\rust-dispatch-proxy.exe"" -auto -system-proxy -quiet", 0, False
+```
+
+With `-auto` the command line never needs updating when your local addresses change. To stop it, end `rust-dispatch-proxy.exe` in Task Manager, then switch the proxy setting off (see [the easy way](#the-easy-way-windows)).
+
+TUN mode needs admin rights, so for `-tun` use a scheduled task instead, from an administrator PowerShell:
 
 ```powershell
 $exe     = "C:\Tools\rust-dispatch-proxy\rust-dispatch-proxy.exe"
-$action  = New-ScheduledTaskAction -Execute $exe -Argument "-tun -quiet 192.168.1.10 192.168.43.25"
+$action  = New-ScheduledTaskAction -Execute $exe -Argument "-tun -auto -quiet"
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 Register-ScheduledTask -TaskName "rust-dispatch-proxy" -Action $action -Trigger $trigger -RunLevel Highest
 ```
-
-Local IP addresses from DHCP can change. Give your adapters fixed addresses or DHCP reservations so the command line stays valid.
 
 ## Limitations
 
@@ -238,13 +275,17 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 | `TUN mode stopped: ... needs administrator rights` | Run the terminal as administrator. |
 | `wintun.dll not found at ...` | Put `wintun.dll` for your CPU architecture next to the `.exe`. |
 | Only one link ever shows traffic | Check that each address belongs to a *different* adapter with its own gateway, and that the app opens more than one connection. Run with `-verbose` to see which link each connection uses. |
-| A link keeps being "skipped for 10 s" | That connection is failing to reach the internet. Check it on its own. |
+| A link keeps being "skipped for 10 s" | That connection is failing to reach the internet, or is much slower than the others. Check it on its own. |
+| Apps have no internet after the proxy stopped | It was force-killed while `-system-proxy` had the setting on. Start the proxy again, or turn the setting off under **Settings → Network & internet → Proxy**. |
+| `-auto` doesn't use an adapter | Only adapters with a default gateway count. Check that the adapter shows a gateway in `ipconfig`. |
 
 ## Project layout
 
 ```
 src/
-├── main.rs       CLI, load balancer, SOCKS5 server and upstream client, protocol detection
+├── main.rs       CLI, load balancer and link racing, SOCKS5 server and upstream client, protocol detection
+├── auto.rs       -auto: finding adapters with internet access and following network changes
+├── sysproxy.rs   -system-proxy: the Windows proxy setting
 ├── http.rs       HTTP proxy (CONNECT and plain-HTTP forwarding)
 ├── net.rs        Sockets pinned to a specific network adapter
 └── tun_mode.rs   System-wide mode: Wintun adapter, routes, user-space TCP/IP stack

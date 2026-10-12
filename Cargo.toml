@@ -21,7 +21,7 @@ default = ["tun"]
 tun = ["dep:tun", "dep:ipstack"]
 
 [dependencies]
-tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "net", "io-util", "time", "macros"] }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "net", "io-util", "time", "macros", "sync"] }
 if-addrs = "0.13"
 ipstack = { version = "1.0.1", optional = true }
 tun = { version = "0.8.14", features = ["async"], optional = true }
@@ -32,6 +32,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Networking_WinSock",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinInet",
+    "Win32_System_Console",
+    "Win32_System_Registry",
 ] }
 
 [profile.release]

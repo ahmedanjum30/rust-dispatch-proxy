@@ -18,7 +18,7 @@ use tokio::net::TcpSocket;
 use tokio::net::UdpSocket;
 
 /// Where an outgoing socket should leave the machine.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Egress {
     pub ip: Ipv4Addr,
     #[cfg_attr(not(windows), allow(dead_code))]

@@ -43,7 +43,7 @@ fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
 }
 
 /// Creates the adapter and serves it until an unrecoverable error.
-pub async fn run(balancer: Arc<Balancer>, connect_timeout: Duration) -> io::Result<()> {
+pub async fn run(balancer: Arc<Balancer>) -> io::Result<()> {
     let mut config = tun::Configuration::default();
     config.tun_name(TUN_NAME).address(TUN_ADDR).netmask(TUN_MASK).mtu(MTU).up();
 
@@ -108,7 +108,7 @@ pub async fn run(balancer: Arc<Balancer>, connect_timeout: Duration) -> io::Resu
     loop {
         match stack.accept().await.map_err(to_io)? {
             IpStackStream::Tcp(flow) => {
-                tokio::spawn(handle_tcp(flow, balancer.clone(), connect_timeout));
+                tokio::spawn(handle_tcp(flow, balancer.clone()));
             }
             IpStackStream::Udp(flow) => {
                 tokio::spawn(handle_udp(flow, balancer.clone()));
@@ -124,13 +124,13 @@ fn is_own_subnet(ip: &Ipv4Addr) -> bool {
     u32::from(*ip) & mask == u32::from(TUN_ADDR) & mask
 }
 
-async fn handle_tcp(mut flow: IpStackTcpStream, balancer: Arc<Balancer>, connect_timeout: Duration) {
+async fn handle_tcp(mut flow: IpStackTcpStream, balancer: Arc<Balancer>) {
     let SocketAddr::V4(dst) = flow.peer_addr() else { return };
     if is_own_subnet(dst.ip()) {
         return;
     }
     // On failure the flow is dropped, which resets the app's connection.
-    let Ok((mut remote, _guard)) = dial(&balancer, &Target::Ip(dst), connect_timeout).await else {
+    let Ok((mut remote, _guard)) = dial(&balancer, &Target::Ip(dst)).await else {
         return;
     };
     let _ = tokio::io::copy_bidirectional_with_sizes(&mut flow, &mut remote, COPY_BUFFER, COPY_BUFFER).await;
@@ -149,12 +149,13 @@ async fn handle_udp(mut flow: IpStackUdpStream, balancer: Arc<Balancer>) {
     }
 
     // Pin this flow to one link, failing over if a socket can't be set up.
-    let mut tried = vec![false; balancer.links.len()];
+    let links = balancer.links();
+    let mut tried = vec![false; links.len()];
     let mut socket = None;
-    while let Some(i) = balancer.pick(&tried) {
+    while let Some(i) = balancer.pick(&links, &tried) {
         tried[i] = true;
         // TUN mode is never combined with -tunnel, so links are adapters.
-        let Via::Adapter(egress) = &balancer.links[i].via else { continue };
+        let Via::Adapter(egress) = &links[i].via else { continue };
         match net::udp_socket(egress) {
             Ok(s) => match s.connect(SocketAddr::V4(dst)).await {
                 Ok(()) => {

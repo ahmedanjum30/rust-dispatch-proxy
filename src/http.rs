@@ -14,7 +14,6 @@
 use std::io;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -145,7 +144,7 @@ async fn respond_error(client: &mut TcpStream, status: &str) {
     let _ = client.write_all(msg.as_bytes()).await;
 }
 
-pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>, connect_timeout: Duration) {
+pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>) {
     let _ = client.set_nodelay(true);
 
     let (head_len, buf) = match timeout(HANDSHAKE_TIMEOUT, read_head(&mut client)).await {
@@ -175,7 +174,7 @@ pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>, 
         Err(_) => Target::Domain(host, port),
     };
 
-    let (mut remote, _guard) = match dial(&balancer, &target, connect_timeout).await {
+    let (mut remote, _guard) = match dial(&balancer, &target).await {
         Ok(ok) => ok,
         Err(e) => {
             let status = if e.kind() == io::ErrorKind::TimedOut {
