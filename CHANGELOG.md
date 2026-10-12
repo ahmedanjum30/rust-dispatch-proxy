@@ -24,9 +24,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Performance
 - Copy buffers raised from 64 KB to 256 KB per direction, and one worker
-  thread per CPU core instead of two. On loopback this moves 31 Gbit/s
-  instead of 15 across 8 streams, so the proxy stays far from being the
-  bottleneck.
+  thread per CPU core instead of two. This raises the proxy's own ceiling,
+  measured on loopback across 8 streams: 15 Gbit/s before, 19 Gbit/s with
+  the larger buffers alone, 32 Gbit/s with both changes. It does not make
+  downloads over typical home connections faster, because the proxy was
+  already far faster than the links. The cost is about 512 KB of memory
+  per open connection.
 
 ### Changed
 - Moved to the Rust 2024 edition. Building from source now needs Rust 1.85

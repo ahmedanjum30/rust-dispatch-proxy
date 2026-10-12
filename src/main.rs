@@ -68,8 +68,8 @@ use net::Egress;
 pub(crate) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const DNS_TIMEOUT: Duration = Duration::from_secs(10);
 /// Per direction, per connection. Measured on loopback: 256 KB moves about
-/// 1.5x the data of 64 KB per CPU second, so the proxy itself stays far from
-/// being the bottleneck.
+/// 1.3x the data of 64 KB per CPU second. Either size is far faster than
+/// typical internet links; the larger one just leaves more headroom.
 pub(crate) const COPY_BUFFER: usize = 256 * 1024;
 const FAILS_BEFORE_COOLDOWN: u32 = 2;
 const COOLDOWN_MS: u64 = 10_000;
