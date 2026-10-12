@@ -46,7 +46,7 @@ pub fn udp_socket(egress: &Egress) -> io::Result<UdpSocket> {
 
 #[cfg(windows)]
 fn set_unicast_if(raw: std::os::windows::io::RawSocket, if_index: u32) -> io::Result<()> {
-    use windows_sys::Win32::Networking::WinSock::{setsockopt, WSAGetLastError, IPPROTO_IP, IP_UNICAST_IF, SOCKET_ERROR};
+    use windows_sys::Win32::Networking::WinSock::{IP_UNICAST_IF, IPPROTO_IP, SOCKET_ERROR, WSAGetLastError, setsockopt};
     // For IPv4 the interface index must be passed in network byte order.
     let value: u32 = if_index.to_be();
     let result = unsafe {

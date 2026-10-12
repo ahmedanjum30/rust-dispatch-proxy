@@ -379,7 +379,7 @@ async fn connect_upstream(up: &Upstream, target: &Target, limit: Duration) -> Re
                 return Err(Failure::Refused(io::Error::new(
                     io::ErrorKind::ConnectionRefused,
                     "refused (reported by upstream)",
-                )))
+                )));
             }
             code => {
                 let kind = match code {

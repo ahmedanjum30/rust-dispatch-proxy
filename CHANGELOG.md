@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Moved to the Rust 2024 edition. Building from source now needs Rust 1.85
+  or newer.
+
 ## [1.0.0] - 2026-10-12
 
 First public release.

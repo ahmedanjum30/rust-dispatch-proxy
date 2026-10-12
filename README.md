@@ -63,7 +63,7 @@ Grab the archive for your platform from the [Releases](https://github.com/ahmeda
 
 ### Build from source
 
-You need a recent stable [Rust toolchain](https://rustup.rs/).
+You need [Rust](https://rustup.rs/) 1.85 or newer.
 
 ```sh
 git clone https://github.com/ahmedanjum30/rust-dispatch-proxy.git

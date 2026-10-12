@@ -25,7 +25,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
 use crate::net;
-use crate::{dial, Balancer, Target, Via, COPY_BUFFER};
+use crate::{Balancer, COPY_BUFFER, Target, Via, dial};
 
 pub const TUN_NAME: &str = "DispatchProxy";
 const TUN_ADDR: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);

@@ -13,7 +13,7 @@ Please open an issue and include:
 
 ## Development
 
-You need a recent stable [Rust toolchain](https://rustup.rs/).
+You need [Rust](https://rustup.rs/) 1.85 or newer. The project uses the Rust 2024 edition.
 
 ```sh
 cargo build                          # debug build with TUN mode

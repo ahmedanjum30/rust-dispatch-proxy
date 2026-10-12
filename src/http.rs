@@ -20,7 +20,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::{dial, Balancer, Target, COPY_BUFFER, HANDSHAKE_TIMEOUT};
+use crate::{Balancer, COPY_BUFFER, HANDSHAKE_TIMEOUT, Target, dial};
 
 const MAX_HEAD: usize = 64 * 1024;
 
