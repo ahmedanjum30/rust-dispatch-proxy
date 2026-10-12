@@ -1,9 +1,23 @@
 name: CI
 
+# Only run when code or build settings change; docs-only commits skip CI.
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rustfmt.toml"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rustfmt.toml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
