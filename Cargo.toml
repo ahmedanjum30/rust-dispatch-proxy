@@ -1,0 +1,41 @@
+[package]
+name = "rust-dispatch-proxy"
+version = "1.0.0"
+edition = "2021"
+description = "Combine several internet connections into one: a load-balancing SOCKS5 + HTTP proxy with an optional system-wide TUN mode"
+license = "PolyForm-Noncommercial-1.0.0"
+readme = "README.md"
+repository = "https://github.com/ahmedanjum30/rust-dispatch-proxy"
+keywords = ["proxy", "socks5", "load-balancing", "multi-wan", "tun"]
+categories = ["network-programming", "command-line-utilities"]
+
+[[bin]]
+name = "rust-dispatch-proxy"
+path = "src/main.rs"
+
+[features]
+default = ["tun"]
+# System-wide mode (-tun). Build with --no-default-features for a smaller
+# binary that only offers the SOCKS5/HTTP proxy.
+tun = ["dep:tun", "dep:ipstack"]
+
+[dependencies]
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "net", "io-util", "time", "macros"] }
+if-addrs = "0.13"
+ipstack = { version = "1.0.1", optional = true }
+tun = { version = "0.8.14", features = ["async"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
