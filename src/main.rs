@@ -298,17 +298,15 @@ async fn read_request(client: &mut TcpStream) -> io::Result<Request> {
 pub(crate) async fn resolve(target: &Target) -> Vec<SocketAddrV4> {
     match target {
         Target::Ip(a) => vec![*a],
-        Target::Domain(host, port) => {
-            match timeout(DNS_TIMEOUT, tokio::net::lookup_host((host.as_str(), *port))).await {
-                Ok(Ok(addrs)) => addrs
-                    .filter_map(|a| match a {
-                        SocketAddr::V4(v4) => Some(v4),
-                        SocketAddr::V6(_) => None,
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            }
-        }
+        Target::Domain(host, port) => match timeout(DNS_TIMEOUT, tokio::net::lookup_host((host.as_str(), *port))).await {
+            Ok(Ok(addrs)) => addrs
+                .filter_map(|a| match a {
+                    SocketAddr::V4(v4) => Some(v4),
+                    SocketAddr::V6(_) => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        },
     }
 }
 
@@ -378,7 +376,10 @@ async fn connect_upstream(up: &Upstream, target: &Target, limit: Duration) -> Re
         match head[1] {
             REP_SUCCESS => {}
             REP_CONNECTION_REFUSED => {
-                return Err(Failure::Refused(io::Error::new(io::ErrorKind::ConnectionRefused, "refused (reported by upstream)")))
+                return Err(Failure::Refused(io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    "refused (reported by upstream)",
+                )))
             }
             code => {
                 let kind = match code {
@@ -430,11 +431,7 @@ async fn route_client(client: TcpStream, balancer: Arc<Balancer>, connect_timeou
 /// one succeeds. Used by the SOCKS5 and HTTP handlers and by TUN mode. The
 /// returned guard keeps the link's active-connection count up while it is
 /// alive.
-pub(crate) async fn dial<'a>(
-    balancer: &'a Balancer,
-    target: &Target,
-    connect_timeout: Duration,
-) -> io::Result<(TcpStream, ActiveGuard<'a>)> {
+pub(crate) async fn dial<'a>(balancer: &'a Balancer, target: &Target, connect_timeout: Duration) -> io::Result<(TcpStream, ActiveGuard<'a>)> {
     let n = balancer.links.len();
     let mut tried = vec![false; n];
     let mut last_err: Option<io::Error> = None;
@@ -553,7 +550,11 @@ fn local_ipv4s() -> Vec<Egress> {
         .into_iter()
         .filter(|i| !i.is_loopback() && !is_own_adapter(&i.name))
         .filter_map(|i| match i.ip() {
-            IpAddr::V4(ip) => Some(Egress { ip, if_index: i.index, if_name: i.name }),
+            IpAddr::V4(ip) => Some(Egress {
+                ip,
+                if_index: i.index,
+                if_name: i.name,
+            }),
             IpAddr::V6(_) => None,
         })
         .collect()
@@ -614,7 +615,12 @@ fn parse_args() -> Config {
                 Some((n, v)) => (n.to_string(), Some(v.to_string())),
                 None => (flag.to_string(), None),
             };
-            let mut value = |n: &str| inline.clone().or_else(|| args.next()).unwrap_or_else(|| fatal(format!("-{n} needs a value")));
+            let mut value = |n: &str| {
+                inline
+                    .clone()
+                    .or_else(|| args.next())
+                    .unwrap_or_else(|| fatal(format!("-{n} needs a value")))
+            };
             match name.as_str() {
                 "lhost" => {
                     let v = value("lhost");
@@ -626,7 +632,11 @@ fn parse_args() -> Config {
                 }
                 "timeout" => {
                     let v = value("timeout");
-                    let secs: f64 = v.parse().ok().filter(|s: &f64| *s > 0.0).unwrap_or_else(|| fatal(format!("Invalid timeout {v}")));
+                    let secs: f64 = v
+                        .parse()
+                        .ok()
+                        .filter(|s: &f64| *s > 0.0)
+                        .unwrap_or_else(|| fatal(format!("Invalid timeout {v}")));
                     connect_timeout = Duration::from_secs_f64(secs);
                 }
                 "tun" => {
@@ -668,13 +678,23 @@ fn parse_args() -> Config {
     }
 
     let links = if tunnel { upstream_links(&specs) } else { adapter_links(&specs) };
-    Config { lhost, lport, connect_timeout, tun, links }
+    Config {
+        lhost,
+        lport,
+        connect_timeout,
+        tun,
+        links,
+    }
 }
 
 /// Splits "address@weight" (weight defaults to 1).
 fn split_weight(spec: &str) -> Result<(&str, u64), String> {
     let (addr, weight_s) = spec.split_once('@').unwrap_or((spec, "1"));
-    let weight = weight_s.parse().ok().filter(|w| *w > 0).ok_or_else(|| format!("Invalid weight for {addr}"))?;
+    let weight = weight_s
+        .parse()
+        .ok()
+        .filter(|w| *w > 0)
+        .ok_or_else(|| format!("Invalid weight for {addr}"))?;
     Ok((addr, weight))
 }
 
@@ -687,7 +707,9 @@ fn adapter_links(specs: &[String]) -> Vec<(Via, u64)> {
             Ok(v) => v,
             Err(e) => fatal(e),
         };
-        let ip: Ipv4Addr = ip_s.parse().unwrap_or_else(|_| fatal(format!("Invalid address {ip_s} (use -tunnel for upstream proxies)")));
+        let ip: Ipv4Addr = ip_s
+            .parse()
+            .unwrap_or_else(|_| fatal(format!("Invalid address {ip_s} (use -tunnel for upstream proxies)")));
         let Some(egress) = local.iter().find(|e| e.ip == ip) else {
             warn!("{ip} is not assigned to any network adapter, skipping it");
             continue;
@@ -771,7 +793,10 @@ fn main() {
             .unwrap_or_else(|e| fatal(format!("Could not start local server on {bind}: {e}")));
         info!("Proxy started at {bind} (SOCKS5 and HTTP)");
         if !cfg.lhost.is_loopback() {
-            warn!("Listening on {} without authentication: anyone who can reach this address can use the proxy", cfg.lhost);
+            warn!(
+                "Listening on {} without authentication: anyone who can reach this address can use the proxy",
+                cfg.lhost
+            );
         }
 
         #[cfg(feature = "tun")]
@@ -814,7 +839,11 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(i, &w)| Link {
-                    via: Via::Adapter(Egress { ip: Ipv4Addr::new(10, 0, 0, i as u8 + 1), if_index: None, if_name: String::new() }),
+                    via: Via::Adapter(Egress {
+                        ip: Ipv4Addr::new(10, 0, 0, i as u8 + 1),
+                        if_index: None,
+                        if_name: String::new(),
+                    }),
                     weight: w,
                     active: AtomicUsize::new(0),
                     consecutive_fails: AtomicU32::new(0),
@@ -912,7 +941,10 @@ mod tests {
                 s.write_all(b"hello").await.unwrap();
             }
         });
-        Upstream { host: "127.0.0.1".into(), port }
+        Upstream {
+            host: "127.0.0.1".into(),
+            port,
+        }
     }
 
     #[tokio::test]
@@ -923,7 +955,9 @@ mod tests {
         let up = fake_upstream(expected, REP_SUCCESS).await;
 
         let target = Target::Domain("example.com".into(), 443);
-        let Ok(mut s) = connect_upstream(&up, &target, Duration::from_secs(5)).await else { panic!("connect failed") };
+        let Ok(mut s) = connect_upstream(&up, &target, Duration::from_secs(5)).await else {
+            panic!("connect failed")
+        };
         let mut data = [0u8; 5];
         s.read_exact(&mut data).await.unwrap();
         assert_eq!(&data, b"hello");
@@ -939,16 +973,28 @@ mod tests {
         let target = Target::Ip(SocketAddrV4::new(Ipv4Addr::new(10, 1, 2, 3), 80));
 
         let up = fake_upstream(ip_request(80), REP_CONNECTION_REFUSED).await;
-        assert!(matches!(connect_upstream(&up, &target, Duration::from_secs(5)).await, Err(Failure::Refused(_))));
+        assert!(matches!(
+            connect_upstream(&up, &target, Duration::from_secs(5)).await,
+            Err(Failure::Refused(_))
+        ));
 
         let up = fake_upstream(ip_request(80), REP_HOST_UNREACHABLE).await;
-        assert!(matches!(connect_upstream(&up, &target, Duration::from_secs(5)).await, Err(Failure::Remote(_))));
+        assert!(matches!(
+            connect_upstream(&up, &target, Duration::from_secs(5)).await,
+            Err(Failure::Remote(_))
+        ));
 
         // Nothing listening: the link itself is broken.
         let dead = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = dead.local_addr().unwrap().port();
         drop(dead);
-        let up = Upstream { host: "127.0.0.1".into(), port };
-        assert!(matches!(connect_upstream(&up, &target, Duration::from_secs(5)).await, Err(Failure::Link(_))));
+        let up = Upstream {
+            host: "127.0.0.1".into(),
+            port,
+        };
+        assert!(matches!(
+            connect_upstream(&up, &target, Duration::from_secs(5)).await,
+            Err(Failure::Link(_))
+        ));
     }
 }

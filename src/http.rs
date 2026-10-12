@@ -129,7 +129,11 @@ pub(crate) fn parse_request(head: &str) -> Result<ParsedRequest, &'static str> {
         out.push_str(&format!("Host: {authority}\r\n"));
     }
     out.push_str("Connection: close\r\n\r\n");
-    Ok(ParsedRequest::Forward { host, port, head: out.into_bytes() })
+    Ok(ParsedRequest::Forward {
+        host,
+        port,
+        head: out.into_bytes(),
+    })
 }
 
 async fn respond_error(client: &mut TcpStream, status: &str) {
@@ -174,7 +178,11 @@ pub(crate) async fn handle_http(mut client: TcpStream, balancer: Arc<Balancer>, 
     let (mut remote, _guard) = match dial(&balancer, &target, connect_timeout).await {
         Ok(ok) => ok,
         Err(e) => {
-            let status = if e.kind() == io::ErrorKind::TimedOut { "504 Gateway Timeout" } else { "502 Bad Gateway" };
+            let status = if e.kind() == io::ErrorKind::TimedOut {
+                "504 Gateway Timeout"
+            } else {
+                "502 Bad Gateway"
+            };
             respond_error(&mut client, status).await;
             return;
         }
@@ -212,14 +220,22 @@ mod tests {
     #[test]
     fn connect_request() {
         let r = parse_request("CONNECT www.google.com:443 HTTP/1.1\r\nHost: www.google.com:443\r\n\r\n").unwrap();
-        assert_eq!(r, ParsedRequest::Tunnel { host: "www.google.com".into(), port: 443 });
+        assert_eq!(
+            r,
+            ParsedRequest::Tunnel {
+                host: "www.google.com".into(),
+                port: 443
+            }
+        );
     }
 
     #[test]
     fn plain_http_is_rewritten() {
         let head = "GET http://example.com:8080/a/b?x=1 HTTP/1.1\r\nHost: example.com:8080\r\n\
                     Proxy-Connection: keep-alive\r\nConnection: keep-alive\r\nAccept: */*\r\n\r\n";
-        let ParsedRequest::Forward { host, port, head } = parse_request(head).unwrap() else { panic!() };
+        let ParsedRequest::Forward { host, port, head } = parse_request(head).unwrap() else {
+            panic!()
+        };
         assert_eq!((host.as_str(), port), ("example.com", 8080));
         let head = String::from_utf8(head).unwrap();
         assert!(head.starts_with("GET /a/b?x=1 HTTP/1.1\r\n"));
