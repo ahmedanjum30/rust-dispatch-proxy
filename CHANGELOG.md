@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-14
+
+### Changed
+- `proxy-gui.exe` is now a single, standalone file: the proxy is built into
+  it, so it needs nothing else. It runs the proxy as a hidden copy of itself
+  (`proxy-gui.exe --proxy ...`), which keeps running when the window closes.
+  It can still control a separate `rust-dispatch-proxy.exe` on the same port.
+  TUN mode remains in the separate `rust-dispatch-proxy.exe`.
+- The proxy is now also a library (`src/lib.rs`), shared by both programs.
+
+### Fixed
+- Control panel: the status light showed as a box, the "Downloaded" column
+  was pushed to the far right, number headers now line up with their values,
+  and the "closing this window doesn't stop the proxy" note shows again.
+
 ## [1.2.1] - 2026-10-14
 
 ### Changed
@@ -90,7 +105,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.0.0...v1.1.0

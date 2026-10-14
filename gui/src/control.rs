@@ -15,40 +15,38 @@ const PROXY_EXE: &str = "rust-dispatch-proxy.exe";
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_VALUE: &str = "rust-dispatch-proxy";
 
-/// rust-dispatch-proxy.exe, expected next to this program.
-pub fn proxy_exe() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join(PROXY_EXE)))
-        .ok_or("Could not locate this program's folder")?;
-    if exe.exists() {
-        Ok(exe)
-    } else {
-        Err(format!(
-            "{PROXY_EXE} wasn't found in this program's folder ({}). Download the zip from \
-             https://github.com/ahmedanjum30/rust-dispatch-proxy/releases and put this program in the same folder.",
-            exe.parent().map(|d| d.display().to_string()).unwrap_or_default()
-        ))
-    }
+/// This program. It contains the proxy too: `proxy-gui.exe --proxy ARGS`
+/// runs the proxy instead of the window, so no other file is needed.
+fn this_exe() -> Result<PathBuf, String> {
+    std::env::current_exe().map_err(|e| format!("Could not locate this program: {e}"))
 }
 
-fn hidden(program: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut cmd = Command::new(program);
-    cmd.creation_flags(CREATE_NO_WINDOW)
+/// This program in proxy mode, without a window.
+fn proxy_command() -> Result<Command, String> {
+    let mut cmd = Command::new(this_exe()?);
+    cmd.arg("--proxy")
+        .creation_flags(CREATE_NO_WINDOW)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    cmd
+    Ok(cmd)
 }
 
 /// Starts the proxy in the background with `settings`.
 pub fn start(settings: &Settings) -> Result<Child, String> {
-    let exe = proxy_exe()?;
     std::fs::create_dir_all(settings::data_dir()).map_err(|e| format!("Could not create the settings folder: {e}"))?;
-    hidden(exe)
+    proxy_command()?
         .args(settings.args())
         .spawn()
         .map_err(|e| format!("Could not start the proxy: {e}"))
+}
+
+/// Whether a process path is a proxy: this program (in proxy mode) or a
+/// separate rust-dispatch-proxy.exe.
+fn is_proxy(path: &str) -> bool {
+    let this = this_exe().map(|p| p.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let path = path.to_ascii_lowercase();
+    path == this || path.ends_with(&format!("\\{PROXY_EXE}"))
 }
 
 /// Stops the proxy listening on `port` (and no other program or proxy), then
@@ -56,23 +54,22 @@ pub fn start(settings: &Settings) -> Result<Child, String> {
 /// that is ended from outside can't do that itself.
 pub fn stop(port: u16) -> Result<(), String> {
     let pid = listener_pid(port).ok_or(format!("No program is listening on port {port}"))?;
-    let name = process_path(pid).unwrap_or_default();
-    if !name.to_ascii_lowercase().ends_with(PROXY_EXE) {
-        return Err(format!("Port {port} belongs to another program ({name}), not the proxy"));
+    let path = process_path(pid).unwrap_or_default();
+    if !is_proxy(&path) {
+        return Err(format!("Port {port} belongs to another program ({path}), not the proxy"));
     }
     terminate(pid)?;
     std::thread::sleep(std::time::Duration::from_millis(300));
-    let exe = proxy_exe()?;
-    hidden(exe)
+    proxy_command()?
         .args(["-system-proxy-off", "-lport", &port.to_string()])
         .status()
         .map_err(|e| format!("Could not reset the Windows proxy setting: {e}"))?;
     Ok(())
 }
 
-/// Addresses of usable network adapters, from `rust-dispatch-proxy -list`.
+/// Addresses of usable network adapters, from the proxy's `-list`.
 pub fn detect_addresses() -> Result<String, String> {
-    let out = hidden(proxy_exe()?)
+    let out = proxy_command()?
         .arg("-list")
         .stdout(Stdio::piped())
         .output()
@@ -202,5 +199,19 @@ pub fn set_start_at_login(on: bool) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("Could not change the start-at-login setting (error {status})"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognises_proxies() {
+        assert!(is_proxy(r"C:\multi\rust-dispatch-proxy.exe"));
+        assert!(is_proxy(r"C:\MULTI\RUST-DISPATCH-PROXY.EXE"));
+        assert!(is_proxy(&this_exe().unwrap().to_string_lossy()));
+        assert!(!is_proxy(r"C:\Program Files\Other\server.exe"));
+        assert!(!is_proxy(r"C:\x\not-rust-dispatch-proxy.exe.bak"));
     }
 }

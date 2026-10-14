@@ -1,15 +1,17 @@
-//! proxy-gui: a Windows control panel for rust-dispatch-proxy.
+//! proxy-gui: rust-dispatch-proxy with a Windows control panel, in one file.
 //!
-//! It starts and stops the proxy (rust-dispatch-proxy.exe in the same
-//! folder), keeps its settings, can start it at login, and shows each
-//! connection's live traffic. The proxy runs as its own hidden process, so
-//! closing this window leaves it running.
+//! It contains the proxy itself: started from the window, it runs this same
+//! program again as a hidden background process (`--proxy`), so closing the
+//! window leaves the proxy running. It keeps the settings, can start the
+//! proxy at login, and shows each connection's live traffic.
 //!
 //!     proxy-gui.exe               open the window
 //!     proxy-gui.exe --background  start the proxy with the saved settings
 //!                                 (if it isn't running) and exit; used at login
 //!     proxy-gui.exe --stop        stop the proxy on the saved port, switch the
 //!                                 Windows proxy setting off, and exit
+//!     proxy-gui.exe --proxy ARGS  run the proxy itself (what the above use);
+//!                                 ARGS are rust-dispatch-proxy's options
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -24,6 +26,12 @@ mod status;
 
 #[cfg(windows)]
 fn main() -> eframe::Result {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("--proxy") {
+        rust_dispatch_proxy::run(args);
+        return Ok(());
+    }
+
     let settings = settings::Settings::load();
 
     if std::env::args().any(|a| a == "--background") {

@@ -75,9 +75,9 @@ From the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases
 | Download | What it is |
 |---|---|
 | `rust-dispatch-proxy-<version>-<platform>.zip` (`.tar.gz` on Linux) | The proxy (`rust-dispatch-proxy.exe`), plus `wintun.dll` for TUN mode, the README and licenses |
-| `proxy-gui-<version>-<platform>.exe` (Windows, optional) | The control panel (see [The control panel](#the-control-panel-windows)) |
+| `proxy-gui-<version>-<platform>.exe` (Windows) | **Everything in one file:** the proxy plus its control panel (see [The control panel](#the-control-panel-windows)). Nothing else to download |
 
-Unzip the archive anywhere. To use the control panel, put its `.exe` in the **same folder** as `rust-dispatch-proxy.exe`; you can rename it to `proxy-gui.exe`. Use the `x86_64` downloads for most PCs and `aarch64` for ARM laptops.
+Most Windows users only need the `proxy-gui` exe: save it anywhere and double-click it. The zip is for using the proxy from a terminal, and for TUN mode. Use the `x86_64` downloads for most PCs and `aarch64` for ARM laptops.
 
 The programs aren't code-signed, so Windows SmartScreen may warn the first time; choose **More info → Run anyway**.
 
@@ -104,7 +104,7 @@ For TUN mode on Windows, download Wintun from [wintun.net](https://www.wintun.ne
 
 ### The control panel (Windows)
 
-Download `proxy-gui-<version>-<platform>.exe` from the Releases page, put it in the same folder as `rust-dispatch-proxy.exe`, and double-click it. From its window you can:
+Download `proxy-gui-<version>-<platform>.exe` from the Releases page and double-click it. It needs no other files: the proxy is built into it. From its window you can:
 
 - **Start, stop and restart** the proxy. It runs hidden in the background.
 - **See every connection live:** download and upload speed, open connections, connect time and failures.
@@ -112,7 +112,7 @@ Download `proxy-gui-<version>-<platform>.exe` from the Releases page, put it in 
 - **Start it automatically when you log in.**
 - **Open the status page or the log.**
 
-Settings are saved in `%APPDATA%\rust-dispatch-proxy`, along with the proxy's log. Closing the window doesn't stop the proxy. `proxy-gui.exe --background` starts the proxy with the saved settings without opening a window, and `proxy-gui.exe --stop` stops it.
+Settings are saved in `%APPDATA%\rust-dispatch-proxy`, along with the proxy's log. Closing the window doesn't stop the proxy. `proxy-gui.exe --background` starts the proxy with the saved settings without opening a window, and `proxy-gui.exe --stop` stops it. (TUN mode is only in the separate `rust-dispatch-proxy.exe`.)
 
 ### The easy way from a terminal (Windows)
 
@@ -317,7 +317,8 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ```
 src/
-├── main.rs       CLI, load balancer and link racing, SOCKS5 server and upstream client, protocol detection
+├── lib.rs        The proxy: CLI, load balancer and link racing, SOCKS5 server and upstream client, protocol detection
+├── main.rs       rust-dispatch-proxy.exe (runs lib.rs; proxy-gui.exe includes it too)
 ├── auto.rs       -auto: finding adapters with internet access and following network changes
 ├── sysproxy.rs   -system-proxy: the Windows proxy setting
 ├── status.rs     The status page (/status and /status.json)

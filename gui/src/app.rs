@@ -136,6 +136,12 @@ fn right(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>) {
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| ui.label(text));
 }
 
+/// A small filled circle: the status light. (The built-in font has no "●".)
+fn dot(ui: &mut egui::Ui, color: Color32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.5, color);
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.check_child();
@@ -151,11 +157,13 @@ impl eframe::App for App {
                 match &reading.status {
                     Some(s) => {
                         let (h, m) = (s.uptime_s / 3600, s.uptime_s % 3600 / 60);
-                        ui.label(RichText::new("● Running").color(Color32::from_rgb(46, 160, 67)).strong());
+                        dot(ui, Color32::from_rgb(46, 160, 67));
+                        ui.label(RichText::new("Running").color(Color32::from_rgb(46, 160, 67)).strong());
                         ui.label(RichText::new(format!("v{} · up {h}h {m}m · port {}", s.version, self.settings.port)).weak());
                     }
                     None => {
-                        ui.label(RichText::new("● Stopped").color(Color32::GRAY).strong());
+                        dot(ui, Color32::GRAY);
+                        ui.label(RichText::new("Stopped").color(Color32::GRAY).strong());
                     }
                 }
             });
@@ -205,10 +213,14 @@ impl eframe::App for App {
                     ui.label(RichText::new("No internet connections found yet.").weak());
                 }
                 Some(s) => {
-                    egui::Grid::new("links").striped(true).num_columns(8).spacing([18.0, 6.0]).show(ui, |ui| {
-                        for h in ["Connection", "Download", "Upload", "Open", "Total", "Connect", "Failures", "Downloaded"] {
-                            ui.label(RichText::new(h).weak());
+                    // A 9th, empty column keeps the last real column from
+                    // stretching across the rest of the window.
+                    egui::Grid::new("links").striped(true).num_columns(9).spacing([18.0, 6.0]).show(ui, |ui| {
+                        ui.label(RichText::new("Connection").weak());
+                        for h in ["Download", "Upload", "Open", "Total", "Connect", "Failures", "Downloaded"] {
+                            right(ui, RichText::new(h).weak());
                         }
+                        ui.label("");
                         ui.end_row();
                         let (mut down_sum, mut up_sum, mut open_sum, mut total_down) = (0.0, 0.0, 0, 0);
                         for l in &s.links {
@@ -238,6 +250,7 @@ impl eframe::App for App {
                             );
                             right(ui, l.failures.to_string());
                             right(ui, size(l.bytes_down));
+                            ui.label("");
                             ui.end_row();
                         }
                         ui.label(RichText::new("Total").strong());
@@ -248,6 +261,7 @@ impl eframe::App for App {
                         ui.label("");
                         ui.label("");
                         right(ui, RichText::new(size(total_down)).strong());
+                        ui.label("");
                         ui.end_row();
                     });
                 }
@@ -317,9 +331,8 @@ impl eframe::App for App {
                 }
             }
 
-            ui.with_layout(Layout::bottom_up(Align::LEFT), |ui| {
-                ui.label(RichText::new("Closing this window doesn't stop the proxy.").weak().small());
-            });
+            ui.add_space(12.0);
+            ui.label(RichText::new("Closing this window doesn't stop the proxy.").weak().small());
         });
     }
 }
