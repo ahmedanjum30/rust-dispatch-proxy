@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-14
+
+### Added
+- `proxy-gui.exe`, a Windows control panel: start, stop and restart the
+  proxy (it runs hidden), see each connection's live speed, change the
+  settings, start it at login, and open the status page or log. Closing the
+  window leaves the proxy running. `--background` and `--stop` do the same
+  without a window.
+- `-system-proxy-off`: switch the Windows proxy setting off if it points at
+  this proxy, then exit. Useful after the proxy was stopped from outside.
+
+### Changed
+- Builds use Rust 1.99.0, pinned in `rust-toolchain.toml`.
+
+### Fixed
+- The minimum Rust version is 1.88, not 1.85 as stated before: a dependency
+  of TUN mode needs 1.88.
+
 ## [1.1.0] - 2026-10-12
 
 ### Added
@@ -65,6 +83,7 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/tag/v1.0.0

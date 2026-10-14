@@ -1,14 +1,19 @@
 [package]
 name = "rust-dispatch-proxy"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Combine several internet connections into one: a load-balancing SOCKS5 + HTTP proxy with an optional system-wide TUN mode"
 license = "PolyForm-Noncommercial-1.0.0"
 readme = "README.md"
 repository = "https://github.com/ahmedanjum30/rust-dispatch-proxy"
 keywords = ["proxy", "socks5", "load-balancing", "multi-wan", "tun"]
 categories = ["network-programming", "command-line-utilities"]
+
+[workspace]
+# gui/ is the Windows control panel (proxy-gui.exe). Commands run in this folder
+# build only the proxy unless you add -p proxy-gui or --workspace.
+members = ["gui"]
 
 [[bin]]
 name = "rust-dispatch-proxy"

@@ -31,12 +31,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The version comes from rust-toolchain.toml; keep the two in step.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.99.0"
           targets: ${{ matrix.target }}
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build GUI (Windows)
+        if: runner.os == 'Windows'
+        run: cargo build --release -p proxy-gui --target ${{ matrix.target }}
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -48,7 +54,7 @@ jobs:
           Expand-Archive wintun.zip -DestinationPath wintun-src
           Copy-Item "wintun-src/wintun/bin/${{ matrix.wintun_arch }}/wintun.dll" "dist/$name/"
           Copy-Item "wintun-src/wintun/LICENSE.txt" "dist/$name/WINTUN-LICENSE.txt"
-          Copy-Item "target/${{ matrix.target }}/release/rust-dispatch-proxy.exe", README.md, LICENSE "dist/$name/"
+          Copy-Item "target/${{ matrix.target }}/release/rust-dispatch-proxy.exe", "target/${{ matrix.target }}/release/proxy-gui.exe", README.md, LICENSE "dist/$name/"
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
 
       - name: Package (Linux)

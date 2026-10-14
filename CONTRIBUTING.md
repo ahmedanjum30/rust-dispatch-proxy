@@ -13,13 +13,15 @@ Please open an issue and include:
 
 ## Development
 
-You need [Rust](https://rustup.rs/) 1.85 or newer. The project uses the Rust 2024 edition.
+The project is built with Rust 1.99.0, pinned in `rust-toolchain.toml` ([rustup](https://rustup.rs/) installs it automatically), and uses the Rust 2024 edition. The proxy also builds with Rust 1.88 or newer.
 
 ```sh
 cargo build                          # debug build with TUN mode
 cargo build --no-default-features    # proxy only, no TUN dependencies
 cargo test                           # unit tests
 cargo test --no-default-features
+cargo build -p proxy-gui             # the Windows control panel (gui/)
+cargo test -p proxy-gui
 ```
 
 On Windows without Visual Studio, use the GNU toolchain (`rustup default stable-gnu`). Building also needs MinGW's `dlltool` and `as`, for example from [WinLibs](https://winlibs.com/) (`winget install BrechtSanders.WinLibs.POSIX.UCRT`). Put its `mingw64\bin` folder first on `PATH`.

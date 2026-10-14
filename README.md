@@ -70,11 +70,20 @@ The SOCKS5/HTTP proxy always runs. `-tun` adds the system-wide mode on top of it
 
 ### Download a release
 
-Grab the archive for your platform from the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases) page. Windows archives already contain `wintun.dll`, which TUN mode needs. Keep it in the same folder as `rust-dispatch-proxy.exe`.
+Grab the archive for your platform from the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases) page and unzip it anywhere. Windows archives contain:
+
+| File | What it is |
+|---|---|
+| `proxy-gui.exe` | The control panel: start here (see [The control panel](#the-control-panel-windows)) |
+| `rust-dispatch-proxy.exe` | The proxy itself, also usable from a terminal |
+| `wintun.dll` | Needed only for TUN mode |
+| `README.md`, `LICENSE`, `WINTUN-LICENSE.txt` | Documentation and licenses |
+
+Keep the files together in one folder. The programs aren't code-signed, so Windows SmartScreen may warn the first time; choose **More info → Run anyway**.
 
 ### Build from source
 
-You need [Rust](https://rustup.rs/) 1.85 or newer.
+The project is built with Rust 1.99.0, pinned in `rust-toolchain.toml`, so [rustup](https://rustup.rs/) installs it automatically. The proxy also builds with Rust 1.88 or newer.
 
 ```sh
 git clone https://github.com/ahmedanjum30/rust-dispatch-proxy.git
@@ -93,7 +102,19 @@ For TUN mode on Windows, download Wintun from [wintun.net](https://www.wintun.ne
 
 ## Quick start
 
-### The easy way (Windows)
+### The control panel (Windows)
+
+Double-click **`proxy-gui.exe`**. From its window you can:
+
+- **Start, stop and restart** the proxy. It runs hidden in the background.
+- **See every connection live:** download and upload speed, open connections, connect time and failures.
+- **Change the settings:** port, finding connections automatically or listing them yourself, managing the Windows proxy setting, and the race delay.
+- **Start it automatically when you log in.**
+- **Open the status page or the log.**
+
+Settings are saved in `%APPDATA%\rust-dispatch-proxy`, along with the proxy's log. Closing the window doesn't stop the proxy. `proxy-gui.exe --background` starts the proxy with the saved settings without opening a window, and `proxy-gui.exe --stop` stops it.
+
+### The easy way from a terminal (Windows)
 
 Connect all your internet connections, for example Ethernet plus a USB-tethered phone, then run:
 
@@ -149,7 +170,7 @@ curl -x http://127.0.0.1:8080   https://example.com
 
 ### Option B: Windows proxy setting
 
-Add `-system-proxy` and the program manages the setting for you (see [the easy way](#the-easy-way-windows)).
+Add `-system-proxy` and the program manages the setting for you (see [the easy way](#the-easy-way-from-a-terminal-windows)).
 
 To set it by hand instead, open **Settings → Network & internet → Proxy → Manual proxy setup**, turn on **Use a proxy server**, and enter address `127.0.0.1`, port `8080`. Browsers and other apps that follow the system proxy are now balanced. Turn the setting off again when you stop the proxy, or those apps will lose their internet connection.
 
@@ -209,6 +230,7 @@ rust-dispatch-proxy [options] -tunnel HOST:PORT[@weight] [HOST:PORT[@weight] ...
 | `-auto` | off | Use every adapter that can reach the internet, and follow network changes while running. Don't pass addresses with it. Windows and Linux. |
 | `-system-proxy` | off | Windows: turn the system proxy setting on while there are enough links, off when there aren't, and off on exit. |
 | `-min-links N` | `2` | How many links `-system-proxy` needs before it turns the setting on. |
+| `-system-proxy-off` | | Windows: switch the system proxy setting off if it points at this proxy (`-lhost`/`-lport`), then exit. Useful after the proxy was force-stopped. |
 | `-timeout SECS` | `4` | Connect timeout per link before failing over. Fractions are allowed (`2.5`). |
 | `-race MS` | `300` | If a link hasn't connected within this many milliseconds, start the next link alongside it. `0` turns racing off. |
 | `-tun` | off | Also capture all system IPv4 traffic through a virtual adapter. |
@@ -247,7 +269,9 @@ To start it hidden at log-on, save this as `rust-dispatch-proxy.vbs` in your Sta
 CreateObject("Wscript.Shell").Run """C:\Tools\rust-dispatch-proxy\rust-dispatch-proxy.exe"" -auto -system-proxy -log ""C:\Tools\rust-dispatch-proxy\proxy.log""", 0, False
 ```
 
-With `-auto` the command line never needs updating when your local addresses change. To stop it, end `rust-dispatch-proxy.exe` in Task Manager, then switch the proxy setting off (see [the easy way](#the-easy-way-windows)).
+The simplest way is the control panel's **Start the proxy automatically when I log in** checkbox. To do it by hand instead, read on.
+
+With `-auto` the command line never needs updating when your local addresses change. To stop it, end `rust-dispatch-proxy.exe` in Task Manager, then run `rust-dispatch-proxy -system-proxy-off` to switch the proxy setting off.
 
 TUN mode needs admin rights, so for `-tun` use a scheduled task instead, from an administrator PowerShell:
 
@@ -301,6 +325,11 @@ src/
 ├── http.rs       HTTP proxy (CONNECT and plain-HTTP forwarding)
 ├── net.rs        Sockets pinned to a specific network adapter
 └── tun_mode.rs   System-wide mode: Wintun adapter, routes, user-space TCP/IP stack
+gui/src/          proxy-gui.exe, the Windows control panel (egui)
+├── app.rs        The window
+├── control.rs    Starting and stopping the proxy, start at login
+├── settings.rs   Saved settings and the proxy's command line
+└── status.rs     Reading /status.json once a second
 ```
 
 ## Contributing

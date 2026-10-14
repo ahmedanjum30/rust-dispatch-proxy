@@ -66,6 +66,45 @@ pub(crate) fn set(on: bool) {
     }
 }
 
+/// Turns the setting off, but only if it currently points at `server`, so a
+/// proxy the user configured for something else is left alone. Used by
+/// -system-proxy-off after the proxy has been stopped from outside (the
+/// GUI's Stop button, scripts). Returns whether it was switched off.
+pub(crate) fn turn_off_if_ours(server: &str) -> bool {
+    let current = read_string("ProxyServer").unwrap_or_default();
+    if !current.trim().eq_ignore_ascii_case(server) {
+        return false;
+    }
+    if write_dword("ProxyEnable", 0).is_err() {
+        return false;
+    }
+    notify_apps();
+    true
+}
+
+fn read_string(name: &str) -> Option<String> {
+    use windows_sys::Win32::System::Registry::{RRF_RT_REG_SZ, RegGetValueW};
+    let (key, name) = (wide(KEY), wide(name));
+    let mut buf = vec![0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    let len = (size as usize / 2).saturating_sub(1); // size includes the terminating 0
+    Some(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
+}
+
 /// Runs on its own thread when the console gets Ctrl+C, Ctrl+Break or is
 /// closed. Returning 0 lets Windows go on to end the process as usual.
 unsafe extern "system" fn on_console_event(_event: u32) -> windows_sys::core::BOOL {

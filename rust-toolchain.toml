@@ -1,0 +1,5 @@
+# Every build (local, CI and releases) uses exactly this Rust version.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -834,6 +834,8 @@ fn usage() -> ! {
          \x20 -system-proxy   Windows: turn the system proxy setting on while there are\n\
          \x20                 enough links, and off when there aren't or on exit\n\
          \x20 -min-links N    links needed before -system-proxy turns it on (default 2)\n\
+         \x20 -system-proxy-off  Windows: switch the system proxy setting off if it points\n\
+         \x20                 at this proxy (-lhost/-lport), then exit\n\
          \x20 -timeout SECS   connect timeout per link (default 4)\n\
          \x20 -race MS        start the next link if one hasn't connected within MS\n\
          \x20                 milliseconds; first to connect wins (default 300, 0 = off)\n\
@@ -876,6 +878,7 @@ fn parse_args() -> Config {
         min_links: 2,
     };
     let mut log_path: Option<String> = None;
+    let mut system_proxy_off = false;
     let mut specs = Vec::new();
 
     let mut args = std::env::args().skip(1);
@@ -927,6 +930,12 @@ fn parse_args() -> Config {
                     }
                     system_proxy.enabled = true;
                 }
+                "system-proxy-off" => {
+                    if !cfg!(windows) {
+                        fatal("-system-proxy-off is only available on Windows".into());
+                    }
+                    system_proxy_off = true;
+                }
                 "log" => log_path = Some(value("log")),
                 "min-links" => {
                     let v = value("min-links");
@@ -974,6 +983,23 @@ fn parse_args() -> Config {
     }
     if auto && !specs.is_empty() {
         fatal("-auto finds the connections itself; leave out the addresses".into());
+    }
+    if system_proxy_off {
+        // Switch Windows' proxy setting off if it points at this proxy, and exit.
+        #[cfg(windows)]
+        {
+            let host = if lhost.is_unspecified() { Ipv4Addr::LOCALHOST } else { lhost };
+            let changed = sysproxy::turn_off_if_ours(&format!("{host}:{lport}"));
+            println!(
+                "{}",
+                if changed {
+                    "Windows proxy setting OFF"
+                } else {
+                    "Windows proxy setting left as it was"
+                }
+            );
+        }
+        exit(0);
     }
     if !auto && specs.is_empty() {
         usage();
