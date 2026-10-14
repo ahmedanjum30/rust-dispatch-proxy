@@ -24,7 +24,11 @@ pub fn proxy_exe() -> Result<PathBuf, String> {
     if exe.exists() {
         Ok(exe)
     } else {
-        Err(format!("{PROXY_EXE} not found next to proxy-gui.exe ({})", exe.display()))
+        Err(format!(
+            "{PROXY_EXE} wasn't found in this program's folder ({}). Download the zip from \
+             https://github.com/ahmedanjum30/rust-dispatch-proxy/releases and put this program in the same folder.",
+            exe.parent().map(|d| d.display().to_string()).unwrap_or_default()
+        ))
     }
 }
 

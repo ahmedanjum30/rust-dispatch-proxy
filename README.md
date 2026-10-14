@@ -70,16 +70,16 @@ The SOCKS5/HTTP proxy always runs. `-tun` adds the system-wide mode on top of it
 
 ### Download a release
 
-Grab the archive for your platform from the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases) page and unzip it anywhere. Windows archives contain:
+From the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases) page, download for your platform:
 
-| File | What it is |
+| Download | What it is |
 |---|---|
-| `proxy-gui.exe` | The control panel: start here (see [The control panel](#the-control-panel-windows)) |
-| `rust-dispatch-proxy.exe` | The proxy itself, also usable from a terminal |
-| `wintun.dll` | Needed only for TUN mode |
-| `README.md`, `LICENSE`, `WINTUN-LICENSE.txt` | Documentation and licenses |
+| `rust-dispatch-proxy-<version>-<platform>.zip` (`.tar.gz` on Linux) | The proxy (`rust-dispatch-proxy.exe`), plus `wintun.dll` for TUN mode, the README and licenses |
+| `proxy-gui-<version>-<platform>.exe` (Windows, optional) | The control panel (see [The control panel](#the-control-panel-windows)) |
 
-Keep the files together in one folder. The programs aren't code-signed, so Windows SmartScreen may warn the first time; choose **More info → Run anyway**.
+Unzip the archive anywhere. To use the control panel, put its `.exe` in the **same folder** as `rust-dispatch-proxy.exe`; you can rename it to `proxy-gui.exe`. Use the `x86_64` downloads for most PCs and `aarch64` for ARM laptops.
+
+The programs aren't code-signed, so Windows SmartScreen may warn the first time; choose **More info → Run anyway**.
 
 ### Build from source
 
@@ -104,7 +104,7 @@ For TUN mode on Windows, download Wintun from [wintun.net](https://www.wintun.ne
 
 ### The control panel (Windows)
 
-Double-click **`proxy-gui.exe`**. From its window you can:
+Download `proxy-gui-<version>-<platform>.exe` from the Releases page, put it in the same folder as `rust-dispatch-proxy.exe`, and double-click it. From its window you can:
 
 - **Start, stop and restart** the proxy. It runs hidden in the background.
 - **See every connection live:** download and upload speed, open connections, connect time and failures.

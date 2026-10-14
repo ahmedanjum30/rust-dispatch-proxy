@@ -54,8 +54,10 @@ jobs:
           Expand-Archive wintun.zip -DestinationPath wintun-src
           Copy-Item "wintun-src/wintun/bin/${{ matrix.wintun_arch }}/wintun.dll" "dist/$name/"
           Copy-Item "wintun-src/wintun/LICENSE.txt" "dist/$name/WINTUN-LICENSE.txt"
-          Copy-Item "target/${{ matrix.target }}/release/rust-dispatch-proxy.exe", "target/${{ matrix.target }}/release/proxy-gui.exe", README.md, LICENSE "dist/$name/"
+          Copy-Item "target/${{ matrix.target }}/release/rust-dispatch-proxy.exe", README.md, LICENSE "dist/$name/"
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          # The control panel is a separate download, next to the zip.
+          Copy-Item "target/${{ matrix.target }}/release/proxy-gui.exe" "dist/proxy-gui-${{ github.ref_name }}-${{ matrix.target }}.exe"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -70,6 +72,7 @@ jobs:
           name: ${{ matrix.target }}
           path: |
             dist/*.zip
+            dist/*.exe
             dist/*.tar.gz
 
   release:

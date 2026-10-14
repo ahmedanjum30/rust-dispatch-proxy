@@ -1817,7 +1817,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "proxy-gui"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "eframe",
  "serde",
@@ -1924,7 +1924,7 @@ dependencies = [
 
 [[package]]
 name = "rust-dispatch-proxy"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "if-addrs",
  "ipstack",

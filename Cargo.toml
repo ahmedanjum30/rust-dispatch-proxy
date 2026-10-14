@@ -1,6 +1,6 @@
 [package]
 name = "rust-dispatch-proxy"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Combine several internet connections into one: a load-balancing SOCKS5 + HTTP proxy with an optional system-wide TUN mode"
