@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rust-dispatch-proxy: combine multiple internet connections on Windows (free)</title>
+<meta name="description" content="Use Ethernet, Wi-Fi and a tethered phone at the same time. rust-dispatch-proxy spreads your downloads across every internet connection you have. Free for personal use, Windows and Linux.">
+<meta name="keywords" content="combine internet connections, multiple internet connections, bandwidth aggregation, load balance internet, dual WAN, multi-WAN, connection bonding, Windows, SOCKS5 proxy, download faster">
+<meta name="author" content="Ahmad Anjum">
+<link rel="canonical" href="https://ahmedanjum30.github.io/rust-dispatch-proxy/">
+<meta name="theme-color" content="#0d1117">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="rust-dispatch-proxy: use all your internet connections at once">
+<meta property="og:description" content="Combine Ethernet, Wi-Fi and a tethered phone so downloads use them all together. Free for personal use, one file, one click.">
+<meta property="og:url" content="https://ahmedanjum30.github.io/rust-dispatch-proxy/">
+<meta property="og:image" content="https://ahmedanjum30.github.io/rust-dispatch-proxy/status-page.png">
+<meta property="og:image:alt" content="Status page: three connections downloading at 57, 91 and 98 Mbit/s, 246 Mbit/s in total">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="rust-dispatch-proxy: use all your internet connections at once">
+<meta name="twitter:description" content="Combine Ethernet, Wi-Fi and a tethered phone so downloads use them all together. Free for personal use.">
+<meta name="twitter:image" content="https://ahmedanjum30.github.io/rust-dispatch-proxy/status-page.png">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f81f7'/%3E%3Cpath d='M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "rust-dispatch-proxy",
+  "description": "Combine multiple internet connections (Ethernet, Wi-Fi, a tethered phone) so downloads and browsing use all of them at once. Load-balancing SOCKS5 and HTTP proxy with a Windows control panel.",
+  "applicationCategory": "UtilitiesApplication",
+  "applicationSubCategory": "Networking",
+  "operatingSystem": "Windows 10, Windows 11, Linux",
+  "softwareVersion": "1.3.0",
+  "url": "https://ahmedanjum30.github.io/rust-dispatch-proxy/",
+  "downloadUrl": "https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest",
+  "codeRepository": "https://github.com/ahmedanjum30/rust-dispatch-proxy",
+  "screenshot": "https://ahmedanjum30.github.io/rust-dispatch-proxy/status-page.png",
+  "license": "https://polyformproject.org/licenses/noncommercial/1.0.0/",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "Ahmad Anjum", "url": "https://github.com/ahmedanjum30" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Can I use two internet connections at the same time on Windows?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Windows normally sends traffic over one connection. rust-dispatch-proxy spreads your connections across every network adapter that can reach the internet, such as Ethernet, Wi-Fi and a USB-tethered phone, so they are used together." } },
+    { "@type": "Question", "name": "Will a single download get faster?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Only if the download uses several connections. Each connection goes over one link, so download managers (such as Internet Download Manager), torrent clients, browsers loading many files and cloud sync benefit the most. A single-stream download stays on one link." } },
+    { "@type": "Question", "name": "Is rust-dispatch-proxy free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, it is free for personal and other non-commercial use under the PolyForm Noncommercial License 1.0.0. Commercial licenses are available from the author." } },
+    { "@type": "Question", "name": "Do I need to install anything?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. On Windows, download one file, proxy-gui.exe, and double-click it. It finds your connections and turns on the Windows proxy setting by itself." } },
+    { "@type": "Question", "name": "Is it a VPN?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. It runs only on your own PC and sends traffic directly out of your own connections. Nothing goes through a third-party server." } }
+  ]
+}
+</script>
+
+<style>
+  :root {
+    --bg: #ffffff; --bg-soft: #f6f8fa; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0;
+    --accent: #0969da; --accent-fg: #ffffff; --good: #1a7f37; --card: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --bg-soft: #151b23; --fg: #e6edf3; --muted: #9198a1; --line: #30363d;
+      --accent: #4493f8; --accent-fg: #0d1117; --good: #3fb950; --card: #151b23;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header.top { border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 60px; }
+  .brand { font-weight: 700; text-decoration: none; color: var(--fg); display: flex; align-items: center; gap: 10px; }
+  .brand svg { width: 26px; height: 26px; flex: none; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+  nav a:hover { color: var(--fg); }
+  .hero { padding: 72px 20px 40px; text-align: center; }
+  .hero h1 { font-size: clamp(32px, 5.2vw, 52px); line-height: 1.12; margin: 0 0 18px; letter-spacing: -0.02em; }
+  .hero p.lead { font-size: clamp(18px, 2.2vw, 21px); color: var(--muted); max-width: 720px; margin: 0 auto 30px; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 13px 22px; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--fg); background: var(--bg-soft); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .btn:hover { filter: brightness(1.07); }
+  .note { font-size: 14px; color: var(--muted); margin-top: 14px; }
+  .shot { margin: 44px auto 0; max-width: 960px; }
+  .shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; }
+  .shot figcaption { font-size: 14px; color: var(--muted); text-align: center; margin-top: 10px; }
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: clamp(26px, 3.4vw, 34px); margin: 0 0 10px; letter-spacing: -0.01em; }
+  section p.sub { color: var(--muted); margin: 0 0 30px; max-width: 760px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
+  .card h3 { margin: 0 0 6px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 16px; }
+  .steps { counter-reset: s; display: grid; gap: 14px; max-width: 760px; padding: 0; list-style: none; }
+  .steps li { counter-increment: s; position: relative; padding: 4px 0 4px 52px; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-weight: 700; display: grid; place-items: center; }
+  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; margin-top: 8px; }
+  .num { text-align: center; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+  .num b { display: block; font-size: 30px; color: var(--good); }
+  .num span { color: var(--muted); font-size: 15px; }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  details { border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; background: var(--card); }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 10px 0 2px; }
+  code { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 0.92em; }
+  footer { border-top: 1px solid var(--line); padding: 30px 0 44px; color: var(--muted); font-size: 15px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
+  @media (max-width: 640px) { nav a:not(.gh) { display: none; } .hero { padding-top: 48px; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2f81f7"/><path d="M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      rust-dispatch-proxy
+    </a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#faq">FAQ</a>
+      <a class="gh" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero wrap">
+    <h1>Use all your internet connections at once</h1>
+    <p class="lead">Ethernet, Wi-Fi and a tethered phone, working together. <strong>rust-dispatch-proxy</strong> spreads your downloads across every connection you have, so you get their combined speed. Free for personal use.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">View on GitHub</a>
+    </div>
+    <p class="note">One file, no installer · Windows 10 &amp; 11 (x64 and ARM) · Linux command-line version</p>
+
+    <figure class="shot">
+      <img src="status-page.png" width="1405" height="426" alt="Status page: three connections downloading at 57, 91 and 98 Mbit/s, 246 Mbit/s in total">
+      <figcaption>Three home connections of about 85 Mbit/s each, carrying 246 Mbit/s together.</figcaption>
+    </figure>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Everything handled for you</h2>
+      <p class="sub">Double-click and it works. Behind the scenes it keeps every connection busy and steps around the ones having trouble.</p>
+      <div class="grid">
+        <div class="card"><h3>Finds your connections</h3><p>Uses every adapter that can reach the internet, and adapts when Wi-Fi drops or a cable is plugged in, without interrupting your downloads.</p></div>
+        <div class="card"><h3>One-click control panel</h3><p>Start, stop and see each connection's live speed. Settings in one place, and an option to start when you log in.</p></div>
+        <div class="card"><h3>Nothing to configure</h3><p>Switches the Windows proxy setting on while it runs and off when it stops, so browsers and other apps just use it.</p></div>
+        <div class="card"><h3>Fast failover</h3><p>If a connection is slow to respond, the next one is tried alongside it within a fraction of a second. The first to connect wins.</p></div>
+        <div class="card"><h3>Your traffic, your lines</h3><p>Not a VPN: everything goes straight out of your own connections. No accounts, no servers in between, no tracking.</p></div>
+        <div class="card"><h3>Light and fast</h3><p>Written in Rust. The proxy uses a few MB of memory and can move many gigabits per second, far more than home connections need.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="sub">Windows normally sends everything over a single connection. rust-dispatch-proxy runs on your PC as a local proxy and sends each new connection out over whichever of your links is least busy.</p>
+      <ol class="steps">
+        <li><strong>Connect your internet connections</strong>: for example Ethernet plus Wi-Fi, or a phone over USB.</li>
+        <li><strong>Download <code>proxy-gui.exe</code> and double-click it.</strong> It finds your connections and turns on the Windows proxy setting.</li>
+        <li><strong>Download as usual.</strong> Apps that open several connections, like download managers, torrent clients and browsers, now use all your links together.</li>
+      </ol>
+      <div class="numbers">
+        <div class="num"><b>3</b><span>home connections</span></div>
+        <div class="num"><b>~85 Mbit/s</b><span>each on its own</span></div>
+        <div class="num"><b>246 Mbit/s</b><span>combined, measured</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="who">
+    <div class="wrap">
+      <h2>Who it's for</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Works great for</th><th>Doesn't speed up</th></tr></thead>
+          <tbody>
+            <tr><td>Download managers (Internet Download Manager and similar)</td><td>A single-stream download (one connection stays on one link)</td></tr>
+            <tr><td>Torrent clients set to use a SOCKS5 proxy</td><td>A single video call or game connection</td></tr>
+            <tr><td>Browsers loading many pages and files, cloud sync, game launchers</td><td>Sites that need one fixed IP address, like some banking sites (use those without the proxy)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <details open><summary>Can I use two internet connections at the same time on Windows?</summary><p>Yes. Windows normally uses one connection at a time. rust-dispatch-proxy spreads your connections across every network adapter that can reach the internet, such as Ethernet, Wi-Fi and a USB-tethered phone, so they're used together.</p></details>
+      <details><summary>Will a single download get faster?</summary><p>Only if the download uses several connections. Each connection goes over one link, so download managers, torrent clients and browsers loading many files benefit the most. A single-stream download stays on one link.</p></details>
+      <details><summary>Is it free?</summary><p>Yes, free for personal and other non-commercial use under the PolyForm Noncommercial License 1.0.0. For commercial use, contact the author on GitHub.</p></details>
+      <details><summary>Do I need to install anything?</summary><p>No. Download one file, <code>proxy-gui.exe</code>, and double-click it. Windows may show a "protected your PC" warning the first time because the app isn't code-signed yet: choose <em>More info → Run anyway</em>.</p></details>
+      <details><summary>Is it a VPN?</summary><p>No. It runs only on your PC and sends traffic straight out of your own connections. Nothing passes through anyone else's server.</p></details>
+      <details><summary>Does it work on Linux?</summary><p>Yes, as a command-line proxy (<code>rust-dispatch-proxy -auto</code>). The control panel is Windows-only.</p></details>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap" style="text-align:center">
+      <h2>Try it now</h2>
+      <p class="sub" style="margin-left:auto;margin-right:auto">Get <code>proxy-gui</code> for Windows (x64, or aarch64 for ARM laptops) from the latest release.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest">Download the latest release</a>
+        <a class="btn" href="https://www.patreon.com/cw/ahmedanjum30">Support on Patreon</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Ahmad Anjum · Free for personal use (<a href="https://github.com/ahmedanjum30/rust-dispatch-proxy/blob/main/LICENSE">PolyForm Noncommercial 1.0.0</a>)</span>
+    <span><a href="https://github.com/ahmedanjum30/rust-dispatch-proxy">GitHub</a> · <a href="https://github.com/ahmedanjum30/rust-dispatch-proxy/discussions">Discussions</a> · <a href="https://www.patreon.com/cw/ahmedanjum30">Patreon</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

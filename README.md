@@ -1,6 +1,7 @@
 # rust-dispatch-proxy
 
 [![Support on Patreon](https://img.shields.io/badge/Support%20on-Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/cw/ahmedanjum30)
+[![Website](https://img.shields.io/badge/Website-rust--dispatch--proxy-2f81f7?style=for-the-badge)](https://ahmedanjum30.github.io/rust-dispatch-proxy/)
 
 **Combine several internet connections into one.** `rust-dispatch-proxy` is a small, fast load-balancing proxy that spreads your outgoing connections across every network adapter you give it (Ethernet, Wi-Fi, a USB-tethered phone, a second ISP, and so on). Downloads and other multi-connection traffic then use all of your connections at once.
 

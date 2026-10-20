@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ahmedanjum30.github.io/rust-dispatch-proxy/sitemap.xml
