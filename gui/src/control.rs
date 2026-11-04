@@ -133,6 +133,66 @@ fn terminate(pid: u32) -> Result<(), String> {
     }
 }
 
+// ------------------------------------------------------------------ Windows apps
+
+// Microsoft Store and other Windows (Store) apps run sandboxed, and Windows
+// blocks them from connecting to programs on the same PC, including this
+// proxy at 127.0.0.1. With the system proxy on they then can't connect at
+// all, unless each one is given a "loopback exemption".
+
+const STORE_FAMILY: &str = "microsoft.windowsstore_8wekyb3d8bbwe";
+
+/// Whether Microsoft Store may reach the proxy (taken as the sign that
+/// Windows apps were allowed). None if Windows couldn't be asked.
+pub fn windows_apps_allowed() -> Option<bool> {
+    let out = Command::new("CheckNetIsolation.exe")
+        .args(["LoopbackExempt", "-s"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).to_ascii_lowercase().contains(STORE_FAMILY))
+}
+
+/// Lets every installed Windows app reach the proxy. Asks for administrator
+/// permission once (a UAC prompt) and waits until it's done. Apps installed
+/// later need this again.
+pub fn allow_windows_apps() -> Result<(), String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
+    use windows_sys::Win32::UI::Shell::{SEE_MASK_NO_CONSOLE, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+
+    const SCRIPT: &str = "Get-AppxPackage | Where-Object { -not $_.IsFramework } | ForEach-Object { \
+                          CheckNetIsolation.exe LoopbackExempt -a ('-n=' + $_.PackageFamilyName) | Out-Null }";
+    let params = wide(&format!("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"{SCRIPT}\""));
+    let (verb, file) = (wide("runas"), wide("powershell.exe"));
+
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = params.as_ptr();
+    info.nShow = SW_HIDE;
+    if unsafe { ShellExecuteExW(&mut info) } == 0 || info.hProcess.is_null() {
+        return Err("Administrator permission wasn't given, so Windows apps still can't use the proxy.".into());
+    }
+    let mut code = 1u32;
+    unsafe {
+        WaitForSingleObject(info.hProcess, 5 * 60 * 1000);
+        GetExitCodeProcess(info.hProcess, &mut code);
+        CloseHandle(info.hProcess);
+    }
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(format!("Allowing Windows apps failed (code {code})"))
+    }
+}
+
 /// Opens a URL or file with its default program.
 pub fn open(target: &str) {
     let _ = Command::new("explorer.exe").arg(target).spawn();
@@ -213,5 +273,11 @@ mod tests {
         assert!(is_proxy(&this_exe().unwrap().to_string_lossy()));
         assert!(!is_proxy(r"C:\Program Files\Other\server.exe"));
         assert!(!is_proxy(r"C:\x\not-rust-dispatch-proxy.exe.bak"));
+    }
+
+    #[test]
+    fn can_ask_windows_about_windows_apps() {
+        // Answers either way, without administrator rights.
+        assert!(windows_apps_allowed().is_some());
     }
 }

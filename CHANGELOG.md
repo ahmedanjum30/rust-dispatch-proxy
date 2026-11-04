@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-04
+
+### Added
+- Control panel: when Microsoft Store and other Windows apps can't reach the
+  proxy (Windows blocks its sandboxed apps from connecting to programs on the
+  same PC), it says so and fixes it in one click, with a single administrator
+  prompt. Settings shows the status and can repeat it for newly installed apps.
+
+### Fixed
+- A connection timeout only counts against a link once another link has
+  reached the same destination. Unreachable destinations, such as offline
+  torrent peers, no longer put healthy links into cooldown.
+- The log says once when a link goes into cooldown and once when it works
+  again, instead of repeating it for every failed connection.
+
 ## [1.3.0] - 2026-10-14
 
 ### Changed
@@ -105,7 +120,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.1.0...v1.2.0

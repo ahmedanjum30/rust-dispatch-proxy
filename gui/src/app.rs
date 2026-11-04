@@ -21,6 +21,11 @@ pub struct App {
     child: Option<Child>,
     message: Option<(String, bool)>, // (text, is_error)
     start_at_login: bool,
+    /// Whether Microsoft Store and other Windows apps may reach the proxy
+    /// (None: unknown).
+    windows_apps: Option<bool>,
+    /// The "allow Windows apps" job, while it waits for the UAC prompt.
+    apps_job: Option<std::thread::JoinHandle<Result<(), String>>>,
 }
 
 impl App {
@@ -37,6 +42,36 @@ impl App {
             child: None,
             message: None,
             start_at_login: control::starts_at_login(),
+            windows_apps: control::windows_apps_allowed(),
+            apps_job: None,
+        }
+    }
+
+    /// Starts letting Windows apps use the proxy (shows a UAC prompt).
+    fn allow_windows_apps(&mut self, ctx: &egui::Context) {
+        if self.apps_job.is_some() {
+            return;
+        }
+        let ctx = ctx.clone();
+        self.info("Waiting for administrator permission...");
+        self.apps_job = Some(std::thread::spawn(move || {
+            let result = control::allow_windows_apps();
+            ctx.request_repaint();
+            result
+        }));
+    }
+
+    /// Picks up the result of allow_windows_apps once it's done.
+    fn check_apps_job(&mut self) {
+        if !self.apps_job.as_ref().is_some_and(|j| j.is_finished()) {
+            return;
+        }
+        let result = self.apps_job.take().map(|j| j.join().unwrap_or_else(|_| Err("Failed".into())));
+        self.windows_apps = control::windows_apps_allowed();
+        match result {
+            Some(Ok(())) => self.info("Done: Microsoft Store and other Windows apps can now use the proxy."),
+            Some(Err(e)) => self.error(e),
+            None => {}
         }
     }
 
@@ -145,6 +180,7 @@ fn dot(ui: &mut egui::Ui, color: Color32) {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.check_child();
+        self.check_apps_job();
         let reading = self.latest.lock().unwrap_or_else(|e| e.into_inner()).clone();
         self.update_rates(&reading);
         let running = reading.status.is_some();
@@ -200,6 +236,23 @@ impl eframe::App for App {
                     ui.visuals().weak_text_color()
                 };
                 ui.label(RichText::new(text).color(color));
+            }
+
+            // ---- Windows apps blocked from the proxy
+            if self.settings.system_proxy && self.windows_apps == Some(false) {
+                ui.add_space(6.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            RichText::new("Microsoft Store and other Windows apps can't connect while the proxy is on.")
+                                .color(Color32::from_rgb(210, 153, 34)),
+                        );
+                        let busy = self.apps_job.is_some();
+                        if ui.add_enabled(!busy, egui::Button::new("Fix (needs administrator)")).clicked() {
+                            self.allow_windows_apps(ui.ctx());
+                        }
+                    });
+                });
             }
 
             // ---- connections
@@ -306,6 +359,23 @@ impl eframe::App for App {
                             ui.label("only with at least");
                             changed |= ui.add(egui::DragValue::new(&mut self.settings.min_links).range(1..=16)).changed();
                             ui.label("connections");
+                        });
+                        ui.horizontal(|ui| {
+                            ui.add_space(24.0);
+                            ui.label("Microsoft Store and other Windows apps:");
+                            match self.windows_apps {
+                                Some(true) => ui.label(RichText::new("allowed").color(Color32::from_rgb(46, 160, 67))),
+                                Some(false) => ui.label(RichText::new("blocked").color(Color32::from_rgb(210, 153, 34))),
+                                None => ui.label(RichText::new("unknown").weak()),
+                            };
+                            let label = if self.windows_apps == Some(true) {
+                                "Allow again (for newly installed apps)"
+                            } else {
+                                "Allow"
+                            };
+                            if ui.add_enabled(self.apps_job.is_none(), egui::Button::new(label)).clicked() {
+                                self.allow_windows_apps(ui.ctx());
+                            }
                         });
                     }
                     ui.horizontal(|ui| {

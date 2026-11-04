@@ -312,6 +312,7 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 | Only one link ever shows traffic | Check that each address belongs to a *different* adapter with its own gateway, and that the app opens more than one connection. The [status page](http://127.0.0.1:8080/status) shows how connections are spread. |
 | A link keeps being "skipped for 10 s" | That connection is failing to reach the internet, or is much slower than the others. Check it on its own. |
 | Apps have no internet after the proxy stopped | It was force-killed while `-system-proxy` had the setting on. Start the proxy again, or turn the setting off under **Settings → Network & internet → Proxy**. |
+| Microsoft Store (or another Windows app) can't connect while the proxy is on | Windows blocks its built-in "Store" apps from reaching programs on the same PC, such as this proxy. In the control panel, click **Fix** (or **Settings → Allow**) once and approve the administrator prompt. Without the control panel, run this in an administrator PowerShell: `Get-AppxPackage \| Where-Object { -not $_.IsFramework } \| ForEach-Object { CheckNetIsolation LoopbackExempt -a "-n=$($_.PackageFamilyName)" }`. Apps installed later need it again. |
 | `-auto` doesn't use an adapter | Only adapters with a default gateway count. Check that the adapter shows a gateway in `ipconfig`. |
 
 ## Project layout

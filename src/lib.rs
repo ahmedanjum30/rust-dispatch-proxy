@@ -185,8 +185,11 @@ impl Link {
     }
 
     fn report_success(&self, took: Duration) {
-        self.consecutive_fails.store(0, Relaxed);
+        let fails = self.consecutive_fails.swap(0, Relaxed);
         self.down_until_ms.store(0, Relaxed);
+        if fails >= FAILS_BEFORE_COOLDOWN {
+            info!("{} is working again", self.via);
+        }
         let sample = (took.as_micros() as u64).max(1);
         let old = self.connect_us.load(Relaxed);
         // Moving average over roughly the last 8 connections.
@@ -197,8 +200,12 @@ impl Link {
         self.failures.fetch_add(1, Relaxed);
         let fails = self.consecutive_fails.fetch_add(1, Relaxed) + 1;
         if fails >= FAILS_BEFORE_COOLDOWN {
-            self.down_until_ms.store(now_ms() + COOLDOWN_MS, Relaxed);
-            warn!("{} failed {} times in a row, skipping it for {} s", self.via, fails, COOLDOWN_MS / 1000);
+            let now = now_ms();
+            let was_cooling = self.down_until_ms.swap(now + COOLDOWN_MS, Relaxed) > now;
+            // One message when a link goes into cooldown, not one per failure.
+            if !was_cooling {
+                warn!("{} failed {} times in a row, skipping it for {} s", self.via, fails, COOLDOWN_MS / 1000);
+            }
         }
     }
 
@@ -596,6 +603,10 @@ type Attempt = Pin<Box<dyn Future<Output = (ActiveGuard, Duration, Result<TcpStr
 /// report how they really ended, so a link that is merely slower than the
 /// winner is not punished, while one that hangs still times out and ends up
 /// in cooldown.
+///
+/// A timeout only counts against a link once another link has reached the
+/// same destination. If every link times out, the destination itself is
+/// unreachable (common with torrent peers), and no link is blamed.
 pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Conn> {
     let links = balancer.links();
     if links.is_empty() {
@@ -619,6 +630,8 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Con
     let mut attempts = 0;
     let mut race_at = tokio::time::Instant::now();
     let mut last_err: Option<io::Error> = None;
+    // Links that timed out: blamed only if another link then connects.
+    let mut timed_out: Vec<Arc<Link>> = Vec::new();
 
     // Each pass starts the next link (if any is left), then waits for an
     // attempt to finish or for the race delay.
@@ -674,6 +687,11 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Con
             Ok(stream) => {
                 link.report_success(took);
                 link.connections.fetch_add(1, Relaxed);
+                // The destination is reachable, so those timeouts were the links' fault.
+                for slow in timed_out.drain(..) {
+                    warn!("{target} via {} failed: connect timed out", slow.via);
+                    slow.report_failure();
+                }
                 for other in racing.drain(..) {
                     tokio::spawn(settle(other));
                 }
@@ -689,12 +707,20 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Con
                 debug!("{target} via {} failed: {e}", link.via);
                 last_err = Some(e);
             }
+            Err(Failure::Link(e)) if e.kind() == io::ErrorKind::TimedOut => {
+                debug!("{target} via {} timed out", link.via);
+                timed_out.push(link.clone());
+                last_err = Some(e);
+            }
             Err(Failure::Link(e)) => {
                 warn!("{target} via {} failed: {e}", link.via);
                 link.report_failure();
                 last_err = Some(e);
             }
         }
+    }
+    if !timed_out.is_empty() {
+        debug!("{target} timed out on every link; not blaming any of them");
     }
     Err(last_err.unwrap_or_else(|| io::Error::other("no links available")))
 }
@@ -1543,5 +1569,50 @@ mod tests {
         let b = upstream_balancer(Vec::new(), Duration::from_secs(1), Some(Duration::from_millis(100)));
         let err = dial(&b, &some_target()).await.err().expect("should fail");
         assert_eq!(err.kind(), io::ErrorKind::NetworkUnreachable);
+    }
+
+    #[tokio::test]
+    async fn unreachable_destination_blames_no_link() {
+        // Every link times out: the destination is dead (like an offline
+        // torrent peer), so neither link should be counted as failing.
+        let b = upstream_balancer(
+            vec![hung_upstream().await, hung_upstream().await],
+            Duration::from_millis(300),
+            Some(Duration::from_millis(50)),
+        );
+        let links = b.links();
+        for _ in 0..3 {
+            let err = dial(&b, &some_target()).await.err().expect("should fail");
+            assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        }
+        for l in links.iter() {
+            assert_eq!(l.failures.load(Relaxed), 0);
+            assert_eq!(l.down_until_ms.load(Relaxed), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_counts_once_another_link_gets_through() {
+        // No racing: the hung link times out first, then the working one
+        // connects, which shows the timeout was the hung link's fault.
+        let b = upstream_balancer(vec![hung_upstream().await, working_upstream().await], Duration::from_millis(200), None);
+        let links = b.links();
+        let conn = dial(&b, &some_target()).await.expect("dial failed");
+        assert!(Arc::ptr_eq(conn.link(), &links[1]));
+        assert_eq!(links[0].failures.load(Relaxed), 1);
+        assert_eq!(links[1].failures.load(Relaxed), 0);
+    }
+
+    #[test]
+    fn cooldown_warns_once_and_recovers() {
+        let link = Link::new(adapter(1), 1);
+        for _ in 0..10 {
+            link.report_failure();
+        }
+        assert!(link.down_until_ms.load(Relaxed) > now_ms());
+        assert_eq!(link.failures.load(Relaxed), 10);
+        link.report_success(Duration::from_millis(30));
+        assert_eq!(link.down_until_ms.load(Relaxed), 0);
+        assert_eq!(link.consecutive_fails.load(Relaxed), 0);
     }
 }
