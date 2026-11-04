@@ -22,10 +22,15 @@ mod settings;
 #[cfg(windows)]
 mod status;
 #[cfg(windows)]
+mod update;
+#[cfg(windows)]
 mod win;
 
 #[cfg(windows)]
 fn main() {
+    // Removes the previous version if an update just happened. The proxy runs
+    // for a long time, so it does this too in case the window closes quickly.
+    update::clean_up_old();
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() == Some("--proxy") {
         rust_dispatch_proxy::run(args);

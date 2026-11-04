@@ -9,8 +9,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Run the JavaScript-based actions (checkout, artifacts, release) on Node 24.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   WINTUN_VERSION: "0.14.1"
 
 jobs:
@@ -27,10 +25,10 @@ jobs:
             os: windows-latest
             wintun_arch: arm64
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The version comes from rust-toolchain.toml; keep the two in step.
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -67,7 +65,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/rust-dispatch-proxy" README.md LICENSE "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: |
@@ -77,15 +75,15 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true

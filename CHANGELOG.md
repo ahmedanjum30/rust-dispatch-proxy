@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-04
+
+### Added
+- Control panel: a **Check for updates** button. When a newer release is out,
+  **Update now** downloads it, puts it in place of `proxy-gui.exe`, and
+  restarts the proxy (if it was running) and the window. Nothing is checked
+  or downloaded unless you press the button.
+
+### Fixed
+- Control panel: pressing Start or Stop no longer leaves the window jumbled.
+  Messages have a fixed place, and leftovers of the old layout are repainted
+  when a notice appears or goes away. The window grows if a notice would push
+  the bottom out of view.
+
+### Changed
+- Release and CI workflows use the Node 24 versions of their GitHub actions
+  and a fixed Ubuntu 24.04 runner, so the builds show no deprecation warnings.
+
 ## [1.4.0] - 2026-11-04
 
 ### Changed
@@ -133,7 +151,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.1...v1.3.0

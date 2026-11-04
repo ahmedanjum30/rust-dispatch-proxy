@@ -58,6 +58,21 @@ pub fn stop(port: u16) -> Result<(), String> {
     if !is_proxy(&path) {
         return Err(format!("Port {port} belongs to another program ({path}), not the proxy"));
     }
+    stop_pid(pid, port)
+}
+
+/// The proxy on `port`, if it is this very program running in proxy mode
+/// (not a separate rust-dispatch-proxy.exe).
+pub fn our_proxy_pid(port: u16) -> Option<u32> {
+    let pid = listener_pid(port)?;
+    let path = process_path(pid)?.to_ascii_lowercase();
+    let this = this_exe().ok()?.to_string_lossy().to_ascii_lowercase();
+    (path == this).then_some(pid)
+}
+
+/// Ends proxy process `pid` and switches Windows' proxy setting off if it
+/// still points at port `port`.
+pub fn stop_pid(pid: u32, port: u16) -> Result<(), String> {
     terminate(pid)?;
     std::thread::sleep(std::time::Duration::from_millis(300));
     proxy_command()?

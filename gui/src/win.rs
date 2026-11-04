@@ -12,7 +12,8 @@ use std::thread::JoinHandle;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_WINDOW, CreateFontW, DEFAULT_CHARSET, DeleteObject, FW_NORMAL, FW_SEMIBOLD, GetSysColor,
-    GetSysColorBrush, HDC, HFONT, InvalidateRect, OUT_DEFAULT_PRECIS, SetBkMode, SetTextColor, TRANSPARENT,
+    GetSysColorBrush, HDC, HFONT, InvalidateRect, OUT_DEFAULT_PRECIS, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE, RDW_UPDATENOW, RedrawWindow,
+    SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
@@ -25,21 +26,26 @@ use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_GROUPBOX, BS_PUSHBUTTON, CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW,
-    DispatchMessageW, EN_CHANGE, ES_AUTOHSCROLL, ES_NUMBER, GetClientRect, GetDlgItem, GetMessageW, GetWindowTextLengthW, GetWindowTextW, HMENU,
-    IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindowVisible, LoadCursorW, LoadIconW, MINMAXINFO, MSG, MoveWindow, PostMessageW,
-    PostQuitMessage, RegisterClassExW, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow,
-    TranslateMessage, WM_APP, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_GETMINMAXINFO, WM_SETFONT, WM_SIZE,
-    WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    DestroyWindow, DispatchMessageW, EN_CHANGE, ES_AUTOHSCROLL, ES_NUMBER, GetClientRect, GetDlgItem, GetMessageW, GetWindowRect,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindowVisible, IsZoomed, LoadCursorW, LoadIconW,
+    MINMAXINFO, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassExW, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+    SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_APP, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY,
+    WM_DPICHANGED, WM_GETMINMAXINFO, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::control;
 use crate::settings::{self, Settings};
 use crate::status::{self, Reading};
+use crate::update;
 
 /// Posted by the status poller after every reading.
 const WM_STATUS: u32 = WM_APP + 1;
 /// Posted when the "allow Windows apps" job has finished.
 const WM_APPS_DONE: u32 = WM_APP + 2;
+/// Posted when an update check has finished.
+const WM_UPDATE_CHECKED: u32 = WM_APP + 3;
+/// Posted when downloading and installing an update has finished.
+const WM_UPDATE_INSTALLED: u32 = WM_APP + 4;
 
 // Control IDs.
 const ID_TITLE: i32 = 100;
@@ -50,9 +56,12 @@ const ID_STOP: i32 = 111;
 const ID_RESTART: i32 = 112;
 const ID_STATUS_PAGE: i32 = 113;
 const ID_LOG: i32 = 114;
+const ID_CHECK_UPDATES: i32 = 115;
 const ID_MESSAGE: i32 = 120;
 const ID_APPS_NOTE: i32 = 121;
 const ID_APPS_FIX: i32 = 122;
+const ID_UPDATE_NOTE: i32 = 123;
+const ID_UPDATE_NOW: i32 = 124;
 const ID_CONNECTIONS: i32 = 130;
 const ID_LIST: i32 = 131;
 const ID_GROUP: i32 = 140;
@@ -97,6 +106,9 @@ const GREEN: u32 = rgb(26, 127, 55);
 const ORANGE: u32 = rgb(176, 110, 0);
 const RED: u32 = rgb(207, 34, 46);
 
+/// Work running on a background thread, with its result.
+type Job<T> = JoinHandle<Result<T, String>>;
+
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
@@ -115,7 +127,13 @@ struct App {
     child: Option<Child>,
     message: Option<(String, bool)>,
     windows_apps: Option<bool>,
-    apps_job: Option<JoinHandle<Result<(), String>>>,
+    apps_job: Option<Job<()>>,
+    /// A newer release, once a check has found one.
+    update: Option<update::Release>,
+    /// A running update check.
+    check_job: Option<Job<update::Release>>,
+    /// A running update install, and the PID of the proxy this program runs.
+    install_job: Option<(Job<()>, Option<u32>)>,
 }
 
 thread_local! {
@@ -157,7 +175,10 @@ pub fn run(settings: Settings) {
             0,
             class.as_ptr(),
             title.as_ptr(),
-            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+            // No WS_CLIPCHILDREN: the Settings group box doesn't paint its own
+            // inside, so the window must, or old pixels stay behind when the
+            // layout moves it.
+            WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             scale(800, dpi),
@@ -256,6 +277,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             with_app(|app| app.finish_apps_job());
             0
         }
+        WM_UPDATE_CHECKED => {
+            with_app(|app| app.finish_update_check());
+            0
+        }
+        WM_UPDATE_INSTALLED => {
+            with_app(|app| app.finish_update_install());
+            0
+        }
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as i32;
             let code = ((wparam >> 16) & 0xFFFF) as u32;
@@ -313,10 +342,99 @@ impl App {
             message: None,
             windows_apps: control::windows_apps_allowed(),
             apps_job: None,
+            update: None,
+            check_job: None,
+            install_job: None,
         };
         app.make_controls();
         app.make_fonts();
         app
+    }
+
+    // -------------------------------------------------------------- updates
+
+    /// Asks GitHub for the latest release in the background. Only ever runs
+    /// when the user presses "Check for updates"; nothing is checked or
+    /// downloaded on its own.
+    fn check_for_updates(&mut self) {
+        if self.check_job.is_some() || self.install_job.is_some() {
+            return;
+        }
+        self.info("Checking for updates...");
+        let target = self.hwnd as usize;
+        let job = std::thread::spawn(move || {
+            let result = update::latest();
+            unsafe { PostMessageW(target as HWND, WM_UPDATE_CHECKED, 0, 0) };
+            result
+        });
+        self.check_job = Some(job);
+        self.update_enabled();
+    }
+
+    fn finish_update_check(&mut self) {
+        let Some(job) = self.check_job.take() else { return };
+        let current = update::current_version();
+        match job.join().unwrap_or_else(|_| Err("Failed".into())) {
+            Ok(release) if release.is_newer() => {
+                self.set_text(ID_UPDATE_NOTE, &format!("Version {} is available (you have v{current}).", release.tag));
+                self.update = Some(release);
+                self.message = None;
+                self.show_message();
+            }
+            Ok(_) => self.info(format!("You have the latest version (v{current}).")),
+            Err(e) => self.error(format!("Could not check for updates: {e}")),
+        }
+        self.update_enabled();
+    }
+
+    /// Downloads the update and swaps it in, in the background.
+    fn install_update(&mut self) {
+        let Some(release) = self.update.clone() else { return };
+        if release.download.is_none() {
+            control::open(&release.page);
+            return;
+        }
+        if self.install_job.is_some() {
+            return;
+        }
+        // Noted now: once the files are swapped, the running proxy's path changes.
+        let proxy = control::our_proxy_pid(self.settings.port);
+        self.info(format!("Downloading version {}...", release.tag));
+        let target = self.hwnd as usize;
+        let job = std::thread::spawn(move || {
+            let result = update::install(&release);
+            unsafe { PostMessageW(target as HWND, WM_UPDATE_INSTALLED, 0, 0) };
+            result
+        });
+        self.install_job = Some((job, proxy));
+        self.update_enabled();
+    }
+
+    /// After an update: restarts the proxy on the new version (if this
+    /// program was running it), opens the new window, and closes this one.
+    fn finish_update_install(&mut self) {
+        let Some((job, proxy)) = self.install_job.take() else { return };
+        match job.join().unwrap_or_else(|_| Err("Failed".into())) {
+            Ok(()) => {
+                let Ok(exe) = std::env::current_exe() else { return };
+                if let Some(pid) = proxy {
+                    let _ = control::stop_pid(pid, self.settings.port);
+                    let _ = std::process::Command::new(&exe).arg("--background").spawn();
+                }
+                let _ = std::process::Command::new(&exe).spawn();
+                unsafe { DestroyWindow(self.hwnd) };
+            }
+            Err(e) => {
+                let page = self
+                    .update
+                    .as_ref()
+                    .map(|r| r.page.clone())
+                    .unwrap_or_else(|| update::RELEASES_PAGE.into());
+                self.error(format!("{e}. Opening the download page instead."));
+                control::open(&page);
+                self.update_enabled();
+            }
+        }
     }
 
     fn ctl(&self, id: i32) -> HWND {
@@ -360,6 +478,7 @@ impl App {
         button(self, "Restart", ID_RESTART);
         button(self, "Open status page", ID_STATUS_PAGE);
         button(self, "Open log", ID_LOG);
+        button(self, "Check for updates", ID_CHECK_UPDATES);
         label(self, "", ID_MESSAGE);
         label(
             self,
@@ -367,6 +486,8 @@ impl App {
             ID_APPS_NOTE,
         );
         button(self, "Fix (needs administrator)", ID_APPS_FIX);
+        label(self, "", ID_UPDATE_NOTE);
+        button(self, "Update now", ID_UPDATE_NOW);
         label(self, "Connections", ID_CONNECTIONS);
 
         // The connections table.
@@ -434,7 +555,7 @@ impl App {
         self.set_check(ID_VERBOSE, self.settings.verbose);
         self.set_check(ID_LOGIN, control::starts_at_login());
         // Shown only when there is something to say; layout() leaves them out.
-        for id in [ID_MESSAGE, ID_APPS_NOTE, ID_APPS_FIX] {
+        for id in [ID_APPS_NOTE, ID_APPS_FIX, ID_UPDATE_NOTE, ID_UPDATE_NOW] {
             self.show(id, false);
         }
     }
@@ -507,12 +628,16 @@ impl App {
         place(ID_RESTART, 186, 48, 90, 28);
         place(ID_STATUS_PAGE, 292, 48, 130, 28);
         place(ID_LOG, 428, 48, 90, 28);
+        place(ID_CHECK_UPDATES, 528, 48, 140, 28);
 
-        // The message line and the Windows-apps notice take room only when shown.
-        let mut y = 86;
-        if self.message.is_some() {
-            full(ID_MESSAGE, 14, y, 20);
-            y += 24;
+        // The message line always has its place, so messages never move
+        // anything; the notices below it take room only when shown.
+        full(ID_MESSAGE, 14, 86, 20);
+        let mut y = 110;
+        if self.update.is_some() {
+            place(ID_UPDATE_NOTE, 14, y + 6, 470, 20);
+            place(ID_UPDATE_NOW, 490, y, 190, 28);
+            y += 34;
         }
         if self.apps_blocked() {
             place(ID_APPS_NOTE, 14, y + 6, 470, 20);
@@ -544,6 +669,30 @@ impl App {
         place(ID_NOTE, 28, gy + 258, 600, 20);
         place(ID_LOGIN, 14, gy + 298, 460, 22);
         full(ID_FOOTER, 14, gy + 328, 20);
+
+        // A notice can push the bottom out of view: make the window taller
+        // (never shorter, so a size the user picked is kept).
+        let short = s(gy + 356) - client.bottom;
+        if short > 0 && client.bottom > 0 && unsafe { IsZoomed(self.hwnd) } == 0 {
+            let mut outer = RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
+            unsafe {
+                GetWindowRect(self.hwnd, &mut outer);
+                SetWindowPos(
+                    self.hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    outer.right - outer.left,
+                    outer.bottom - outer.top + short,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
 
         // Stretch the first column so the columns exactly fill the table
         // (its inside width, without border or scroll bar).
@@ -615,6 +764,8 @@ impl App {
             }
         } else if is(ID_APPS_NOTE) {
             Some(ORANGE)
+        } else if is(ID_UPDATE_NOTE) {
+            Some(GREEN)
         } else if is(ID_APPS_STATE) {
             Some(if self.windows_apps == Some(true) { GREEN } else { ORANGE })
         } else if is(ID_DETAILS) || is(ID_NOTE) || is(ID_FOOTER) {
@@ -638,7 +789,6 @@ impl App {
         let text = self.message.as_ref().map(|m| m.0.as_str()).unwrap_or("");
         self.set_text(ID_MESSAGE, text);
         unsafe { InvalidateRect(self.ctl(ID_MESSAGE), std::ptr::null(), 1) };
-        self.set_visible(ID_MESSAGE, self.message.is_some());
     }
 
     fn apps_blocked(&self) -> bool {
@@ -652,7 +802,16 @@ impl App {
         if visible != on {
             self.show(id, on);
             self.layout();
-            unsafe { InvalidateRect(self.hwnd, std::ptr::null(), 1) };
+            // Repaint the whole window, children included, so nothing is left
+            // behind where controls used to be.
+            unsafe {
+                RedrawWindow(
+                    self.hwnd,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+                )
+            };
         }
     }
 
@@ -676,6 +835,8 @@ impl App {
                 }
             }
             (ID_APPS_FIX | ID_APPS_ALLOW, BN_CLICKED) => self.allow_windows_apps(),
+            (ID_CHECK_UPDATES, BN_CLICKED) => self.check_for_updates(),
+            (ID_UPDATE_NOW, BN_CLICKED) => self.install_update(),
             (ID_DETECT, BN_CLICKED) => match control::detect_addresses() {
                 Ok(found) => self.set_text(ID_ADDR, &found), // EN_CHANGE saves it
                 Err(e) => self.error(e),
@@ -806,6 +967,13 @@ impl App {
         let blocked = self.apps_blocked();
         self.show(ID_APPS_FIX, blocked);
         self.set_visible(ID_APPS_NOTE, blocked);
+
+        let updating = self.check_job.is_some() || self.install_job.is_some();
+        self.enable(ID_CHECK_UPDATES, !updating);
+        self.enable(ID_UPDATE_NOW, self.install_job.is_none());
+        let available = self.update.is_some();
+        self.show(ID_UPDATE_NOW, available);
+        self.set_visible(ID_UPDATE_NOTE, available);
     }
 
     /// Updates everything from the latest status reading.
