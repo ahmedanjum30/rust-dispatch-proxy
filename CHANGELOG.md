@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-04
+
+### Fixed
+- Control panel: Check for updates no longer fails with `GitHub answered with
+  status 403`. It used GitHub's API, which allows 60 requests an hour per
+  internet address; it now reads the latest release from github.com itself,
+  which has no such limit.
+
 ## [1.4.1] - 2026-11-04
 
 ### Added
@@ -151,7 +159,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...v1.3.1

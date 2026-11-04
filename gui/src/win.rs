@@ -390,10 +390,6 @@ impl App {
     /// Downloads the update and swaps it in, in the background.
     fn install_update(&mut self) {
         let Some(release) = self.update.clone() else { return };
-        if release.download.is_none() {
-            control::open(&release.page);
-            return;
-        }
         if self.install_job.is_some() {
             return;
         }
