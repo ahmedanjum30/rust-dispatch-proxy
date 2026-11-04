@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-11-04
+
+### Changed
+- Control panel updates keep GitHub's file name: **Update now** saves the
+  new version next to the current one (e.g.
+  `proxy-gui-v1.4.3-x86_64-pc-windows-msvc.exe`) instead of overwriting it,
+  so the file name always says which version it is. The new version then
+  takes over: it restarts the proxy from itself with exactly the options the
+  running proxy had, points start-at-login at itself, and deletes the old
+  file.
+- A copy left with an older version's name by the 1.4.1/1.4.2 updater moves
+  itself to the right name the first time its window opens.
+
+### Fixed
+- Control panel: if start-at-login points at a file that no longer exists
+  (e.g. an older version deleted by hand), opening the window points it at
+  the current file.
+
 ## [1.4.2] - 2026-11-04
 
 ### Fixed
@@ -159,7 +177,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...v1.4.0

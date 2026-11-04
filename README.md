@@ -112,7 +112,7 @@ Download `proxy-gui-<version>-<platform>.exe` from the Releases page and double-
 - **Change the settings:** port, finding connections automatically or listing them yourself, managing the Windows proxy setting, and the race delay.
 - **Start it automatically when you log in.**
 - **Open the status page or the log.**
-- **Update itself.** Press **Check for updates**; if a newer release is out, **Update now** downloads it, replaces `proxy-gui.exe` and restarts the proxy and the window. It only checks when you press the button.
+- **Update itself.** Press **Check for updates**; if a newer release is out, **Update now** downloads it into the same folder under its name on GitHub (e.g. `proxy-gui-v1.4.3-x86_64-pc-windows-msvc.exe`) and hands over to it: the proxy restarts from the new file with exactly the options it was running with, start-at-login points at the new file, and the old file is deleted. It only checks when you press the button.
 
 Settings are saved in `%APPDATA%\rust-dispatch-proxy`, along with the proxy's log. Closing the window doesn't stop the proxy. `proxy-gui.exe --background` starts the proxy with the saved settings without opening a window, and `proxy-gui.exe --stop` stops it. (TUN mode is only in the separate `rust-dispatch-proxy.exe`.)
 

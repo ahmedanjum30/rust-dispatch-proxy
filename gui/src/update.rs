@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::control;
+
 use windows_sys::Win32::Networking::WinInet::{
     HTTP_QUERY_FLAG_NUMBER, HTTP_QUERY_STATUS_CODE, HttpQueryInfoW, INTERNET_FLAG_NO_CACHE_WRITE, INTERNET_FLAG_NO_UI, INTERNET_FLAG_RELOAD,
     INTERNET_OPEN_TYPE_PRECONFIG, INTERNET_OPTION_URL, InternetCloseHandle, InternetOpenUrlW, InternetOpenW, InternetQueryOptionW, InternetReadFile,
@@ -78,10 +80,15 @@ pub fn latest() -> Result<Release, String> {
     Ok(Release::from_tag(tag))
 }
 
-/// Downloads the release's exe and puts it in place of this program. The
-/// running program keeps working from its old file (renamed to *.old,
-/// removed on the next start); the caller then starts the new one.
-pub fn install(release: &Release) -> Result<(), String> {
+/// Downloads the release's exe into this program's folder, under its name
+/// on GitHub (e.g. proxy-gui-v1.4.3-x86_64-pc-windows-msvc.exe), and returns
+/// its path. The caller starts it with `--take-over`.
+pub fn install(release: &Release) -> Result<PathBuf, String> {
+    let exe = this_exe()?;
+    let target = exe.with_file_name(asset_name(&release.tag));
+    if same_file(&target, &exe) {
+        return Err("This program already has the new version's name".into());
+    }
     let request = Request::open(&release.download)?;
     if request.status() == 404 {
         return Err("This release has no download for this PC".into());
@@ -92,39 +99,125 @@ pub fn install(release: &Release) -> Result<(), String> {
     if bytes.len() < 100_000 || !bytes.starts_with(b"MZ") {
         return Err("The download doesn't look like the program".into());
     }
-    let exe = std::env::current_exe().map_err(|e| format!("Could not locate this program: {e}"))?;
-    let (new, old) = (sibling(&exe, "new"), sibling(&exe, "old"));
-    std::fs::write(&new, &bytes).map_err(|e| format!("Could not save the update next to this program: {e}"))?;
-    let _ = std::fs::remove_file(&old);
-    // Windows lets a running program's file be renamed, but not replaced.
-    std::fs::rename(&exe, &old).map_err(|e| {
-        let _ = std::fs::remove_file(&new);
-        format!("Could not replace this program: {e}")
+    // Written under a temporary name first, so a half-written file never
+    // has the program's name.
+    let part = sibling(&target, "part");
+    std::fs::write(&part, &bytes).map_err(|e| format!("Could not save the update next to this program: {e}"))?;
+    let _ = std::fs::remove_file(&target);
+    std::fs::rename(&part, &target).map_err(|e| {
+        let _ = std::fs::remove_file(&part);
+        format!("Could not save the update next to this program: {e}")
     })?;
-    if let Err(e) = std::fs::rename(&new, &exe) {
-        let _ = std::fs::rename(&old, &exe); // put the old one back
-        return Err(format!("Could not replace this program: {e}"));
-    }
-    Ok(())
+    Ok(target)
 }
 
-/// Removes the previous version left behind by an update. Right after an
-/// update the old program may still be closing, so this keeps trying for a
-/// few seconds in the background.
-pub fn clean_up_old() {
-    let Ok(exe) = std::env::current_exe() else { return };
-    let old = sibling(&exe, "old");
-    if !old.exists() {
+/// Run by the new version, started with `--take-over OLD` by the old one:
+/// restarts the proxy (if OLD was running it) from this program with exactly
+/// the options it had, points start-at-login here if it ran OLD, and deletes
+/// OLD once its window has closed.
+pub fn take_over(old: &Path, port: u16) {
+    let Ok(exe) = this_exe() else { return };
+    // Only ever another copy of this program, next to this one.
+    if same_file(old, &exe) || old.parent() != exe.parent() || !is_program_name(old) {
         return;
     }
+    move_proxy(old, port);
+    control::repoint_login(Some(old));
+    // The old program may still be closing, or (after a 1.4.1/1.4.2-style
+    // update) about to start the proxy itself, so keep at it for a while.
+    let (old, leftover) = (old.to_path_buf(), sibling(old, "old"));
     std::thread::spawn(move || {
-        for _ in 0..20 {
+        for _ in 0..30 {
+            move_proxy(&old, port);
+            let _ = std::fs::remove_file(&leftover);
             if std::fs::remove_file(&old).is_ok() || !old.exists() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     });
+}
+
+/// If `old` runs the proxy on `port`, restarts it from this program with the
+/// same options.
+fn move_proxy(old: &Path, port: u16) {
+    let Some(pid) = control::proxy_pid_from(port, old) else { return };
+    let args = control::proxy_args(pid);
+    if control::stop_pid(pid, port).is_ok() {
+        let _ = match args {
+            Some(args) => control::start_with(&args),
+            None => control::start(&crate::settings::Settings::load()),
+        };
+    }
+}
+
+/// Versions 1.4.1 and 1.4.2 updated by putting the new version in place of
+/// the old file, so it can carry an older version's name, e.g. a v1.4.3
+/// called proxy-gui-v1.4.2-....exe. Gives this program its right name: makes
+/// a copy under that name and starts it with `--take-over`, which moves the
+/// proxy and start-at-login over and deletes this file. Returns true if the
+/// copy was started (this one should then exit).
+pub fn fix_name() -> bool {
+    let Ok(exe) = this_exe() else { return false };
+    let Some(version) = exe.file_name().and_then(|n| version_in_name(&n.to_string_lossy())) else {
+        return false;
+    };
+    if parse_version(&version) == parse_version(current_version()) {
+        return false;
+    }
+    let right = exe.with_file_name(asset_name(&format!("v{}", current_version())));
+    if std::fs::copy(&exe, &right).is_err() {
+        return false;
+    }
+    std::process::Command::new(&right).arg("--take-over").arg(&exe).spawn().is_ok()
+}
+
+/// Removes the previous version left behind by a 1.4.1/1.4.2-style update
+/// (this file's name plus .old).
+pub fn clean_up_old() {
+    let Ok(exe) = this_exe() else { return };
+    let old = sibling(&exe, "old");
+    if old.exists() {
+        delete_soon(vec![old]);
+    }
+}
+
+/// Deletes files in the background, retrying for a few seconds: right after
+/// an update the old program may still be closing.
+fn delete_soon(mut files: Vec<PathBuf>) {
+    if files.is_empty() {
+        return;
+    }
+    std::thread::spawn(move || {
+        for _ in 0..30 {
+            files.retain(|f| std::fs::remove_file(f).is_err() && f.exists());
+            if files.is_empty() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    });
+}
+
+fn this_exe() -> Result<PathBuf, String> {
+    std::env::current_exe().map_err(|e| format!("Could not locate this program: {e}"))
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+}
+
+/// proxy-gui.exe or proxy-gui-v1.4.2-....exe: names this program has.
+fn is_program_name(path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    name.starts_with("proxy-gui") && name.ends_with(".exe")
+}
+
+/// The version in a release file name: proxy-gui-v1.4.2-x86_64-....exe -> "v1.4.2".
+fn version_in_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("proxy-gui-")?;
+    let version = rest.split('-').next()?;
+    parse_version(version).map(|_| version.to_string())
 }
 
 /// proxy-gui.exe -> proxy-gui.exe.new / proxy-gui.exe.old
@@ -260,5 +353,16 @@ mod tests {
         assert_eq!(release.download, format!("{REPO}/releases/download/v1.5.0/{name}"));
         assert_eq!(release.page, format!("{REPO}/releases/tag/v1.5.0"));
         assert_eq!(sibling(Path::new(r"C:\x\proxy-gui.exe"), "old"), PathBuf::from(r"C:\x\proxy-gui.exe.old"));
+    }
+
+    #[test]
+    fn versions_in_file_names() {
+        assert_eq!(version_in_name("proxy-gui-v1.4.2-x86_64-pc-windows-msvc.exe").as_deref(), Some("v1.4.2"));
+        assert_eq!(version_in_name("proxy-gui.exe"), None);
+        assert_eq!(version_in_name("proxy-gui-old.exe"), None);
+        assert!(is_program_name(Path::new(r"D:\x\proxy-gui-v1.4.0-x86_64-pc-windows-msvc.exe")));
+        assert!(is_program_name(Path::new(r"D:\x\Proxy-GUI.exe")));
+        assert!(!is_program_name(Path::new(r"D:\x\notes.txt")));
+        assert!(!is_program_name(Path::new(r"D:\x\rust-dispatch-proxy.exe")));
     }
 }

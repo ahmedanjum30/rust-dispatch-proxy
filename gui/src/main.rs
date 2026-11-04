@@ -12,6 +12,10 @@
 //!                                 Windows proxy setting off, and exit
 //!     proxy-gui.exe --proxy ARGS  run the proxy itself (what the above use);
 //!                                 ARGS are rust-dispatch-proxy's options
+//!     proxy-gui.exe --take-over OLD
+//!                                 used by updates: move the proxy and
+//!                                 start-at-login over from the older copy
+//!                                 OLD, delete it, and open the window
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -49,6 +53,19 @@ fn main() {
         let _ = control::stop(settings.port);
         return;
     }
+
+    // After an update: the old version started this one to take over.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(at) = args.iter().position(|a| a == "--take-over")
+        && let Some(old) = args.get(at + 1)
+    {
+        update::take_over(std::path::Path::new(old), settings.port);
+    } else if update::fix_name() {
+        return; // the correctly named copy carries on
+    }
+    // Start-at-login pointing at a file that's gone (an older version
+    // deleted by hand): point it here.
+    control::repoint_login(None);
 
     win::run(settings);
 }

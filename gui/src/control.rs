@@ -34,11 +34,73 @@ fn proxy_command() -> Result<Command, String> {
 
 /// Starts the proxy in the background with `settings`.
 pub fn start(settings: &Settings) -> Result<Child, String> {
+    start_with(&settings.args())
+}
+
+/// Starts the proxy in the background with these proxy options.
+pub fn start_with(args: &[String]) -> Result<Child, String> {
     std::fs::create_dir_all(settings::data_dir()).map_err(|e| format!("Could not create the settings folder: {e}"))?;
-    proxy_command()?
-        .args(settings.args())
-        .spawn()
-        .map_err(|e| format!("Could not start the proxy: {e}"))
+    proxy_command()?.args(args).spawn().map_err(|e| format!("Could not start the proxy: {e}"))
+}
+
+/// The proxy on `port` if it runs from program file `exe`.
+pub fn proxy_pid_from(port: u16, exe: &std::path::Path) -> Option<u32> {
+    let pid = listener_pid(port)?;
+    let path = process_path(pid)?;
+    path.eq_ignore_ascii_case(&exe.to_string_lossy()).then_some(pid)
+}
+
+/// The options a proxy process was started with (what follows `--proxy`).
+pub fn proxy_args(pid: u32) -> Option<Vec<String>> {
+    let args = command_line(pid)?;
+    let at = args.iter().position(|a| a == "--proxy")?;
+    Some(args[at + 1..].to_vec())
+}
+
+/// Another process's command line, split into arguments.
+fn command_line(pid: u32) -> Option<Vec<String>> {
+    use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessCommandLineInformation};
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, UNICODE_STRING};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::UI::Shell::CommandLineToArgvW;
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        // The answer is a UNICODE_STRING followed by the text it points to;
+        // u64 elements keep it aligned.
+        let mut buf = vec![0u64; 8 * 1024];
+        let mut len = 0u32;
+        let status = NtQueryInformationProcess(
+            handle,
+            ProcessCommandLineInformation,
+            buf.as_mut_ptr().cast(),
+            (buf.len() * 8) as u32,
+            &mut len,
+        );
+        CloseHandle(handle);
+        if status != 0 {
+            return None;
+        }
+        let text = &*buf.as_ptr().cast::<UNICODE_STRING>();
+        let mut line: Vec<u16> = std::slice::from_raw_parts(text.Buffer, text.Length as usize / 2).to_vec();
+        line.push(0);
+        let mut count = 0;
+        let argv = CommandLineToArgvW(line.as_ptr(), &mut count);
+        if argv.is_null() {
+            return None;
+        }
+        let args = (0..count as usize)
+            .map(|i| {
+                let p = *argv.add(i);
+                let n = (0..).take_while(|&k| *p.add(k) != 0).count();
+                String::from_utf16_lossy(std::slice::from_raw_parts(p, n))
+            })
+            .collect();
+        LocalFree(argv.cast());
+        Some(args)
+    }
 }
 
 /// Whether a process path is a proxy: this program (in proxy mode) or a
@@ -59,15 +121,6 @@ pub fn stop(port: u16) -> Result<(), String> {
         return Err(format!("Port {port} belongs to another program ({path}), not the proxy"));
     }
     stop_pid(pid, port)
-}
-
-/// The proxy on `port`, if it is this very program running in proxy mode
-/// (not a separate rust-dispatch-proxy.exe).
-pub fn our_proxy_pid(port: u16) -> Option<u32> {
-    let pid = listener_pid(port)?;
-    let path = process_path(pid)?.to_ascii_lowercase();
-    let this = this_exe().ok()?.to_string_lossy().to_ascii_lowercase();
-    (path == this).then_some(pid)
 }
 
 /// Ends proxy process `pid` and switches Windows' proxy setting off if it
@@ -227,6 +280,29 @@ fn login_command() -> Option<String> {
 
 /// Whether Windows starts the proxy (through this program) at login.
 pub fn starts_at_login() -> bool {
+    login_entry().is_some_and(|current| login_command().is_some_and(|cmd| current.eq_ignore_ascii_case(&cmd)))
+}
+
+/// The program the start-at-login entry runs, if there is one.
+fn login_program() -> Option<PathBuf> {
+    let entry = login_entry()?;
+    let path = entry.strip_prefix('"')?.split('"').next()?;
+    Some(PathBuf::from(path))
+}
+
+/// Points the start-at-login entry at this program if it ran `old` (after
+/// an update) or a program that no longer exists (e.g. an older version
+/// deleted by hand). An entry for another, existing file is left alone.
+pub fn repoint_login(old: Option<&std::path::Path>) {
+    let Some(program) = login_program() else { return };
+    let was_old = old.is_some_and(|old| program.to_string_lossy().eq_ignore_ascii_case(&old.to_string_lossy()));
+    if (was_old || !program.exists()) && !starts_at_login() {
+        let _ = set_start_at_login(true);
+    }
+}
+
+/// The start-at-login entry's command, if there is one.
+fn login_entry() -> Option<String> {
     let (key, value) = (wide(RUN_KEY), wide(RUN_VALUE));
     let mut buf = vec![0u16; 1024];
     let mut size = (buf.len() * 2) as u32;
@@ -242,11 +318,10 @@ pub fn starts_at_login() -> bool {
         )
     };
     if status != 0 {
-        return false;
+        return None;
     }
     let len = (size as usize / 2).saturating_sub(1);
-    let current = String::from_utf16_lossy(&buf[..len.min(buf.len())]);
-    login_command().is_some_and(|cmd| current.eq_ignore_ascii_case(&cmd))
+    Some(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
 }
 
 pub fn set_start_at_login(on: bool) -> Result<(), String> {
@@ -288,6 +363,21 @@ mod tests {
         assert!(is_proxy(&this_exe().unwrap().to_string_lossy()));
         assert!(!is_proxy(r"C:\Program Files\Other\server.exe"));
         assert!(!is_proxy(r"C:\x\not-rust-dispatch-proxy.exe.bak"));
+    }
+
+    #[test]
+    fn reads_a_command_line() {
+        let args = command_line(std::process::id()).unwrap();
+        assert_eq!(args.len(), std::env::args().count());
+        let mut child = Command::new("cmd.exe")
+            .args(["/c", "ping -n 3 127.0.0.1 >nul", "--proxy", "-lport", "8080", "a b"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .unwrap();
+        let after = proxy_args(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(after.unwrap(), ["-lport", "8080", "a b"]);
     }
 
     #[test]

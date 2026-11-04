@@ -132,8 +132,8 @@ struct App {
     update: Option<update::Release>,
     /// A running update check.
     check_job: Option<Job<update::Release>>,
-    /// A running update install, and the PID of the proxy this program runs.
-    install_job: Option<(Job<()>, Option<u32>)>,
+    /// A running update download; gives the new version's path.
+    install_job: Option<Job<std::path::PathBuf>>,
 }
 
 thread_local! {
@@ -393,8 +393,6 @@ impl App {
         if self.install_job.is_some() {
             return;
         }
-        // Noted now: once the files are swapped, the running proxy's path changes.
-        let proxy = control::our_proxy_pid(self.settings.port);
         self.info(format!("Downloading version {}...", release.tag));
         let target = self.hwnd as usize;
         let job = std::thread::spawn(move || {
@@ -402,24 +400,27 @@ impl App {
             unsafe { PostMessageW(target as HWND, WM_UPDATE_INSTALLED, 0, 0) };
             result
         });
-        self.install_job = Some((job, proxy));
+        self.install_job = Some(job);
         self.update_enabled();
     }
 
-    /// After an update: restarts the proxy on the new version (if this
-    /// program was running it), opens the new window, and closes this one.
+    /// After the download: starts the new version, which takes over (moves
+    /// the proxy and start-at-login to itself and deletes this file), and
+    /// closes this window.
     fn finish_update_install(&mut self) {
-        let Some((job, proxy)) = self.install_job.take() else { return };
-        match job.join().unwrap_or_else(|_| Err("Failed".into())) {
-            Ok(()) => {
-                let Ok(exe) = std::env::current_exe() else { return };
-                if let Some(pid) = proxy {
-                    let _ = control::stop_pid(pid, self.settings.port);
-                    let _ = std::process::Command::new(&exe).arg("--background").spawn();
-                }
-                let _ = std::process::Command::new(&exe).spawn();
-                unsafe { DestroyWindow(self.hwnd) };
-            }
+        let Some(job) = self.install_job.take() else { return };
+        let started = job.join().unwrap_or_else(|_| Err("Failed".into())).and_then(|new| {
+            let this = std::env::current_exe().map_err(|e| e.to_string())?;
+            std::process::Command::new(&new)
+                .arg("--take-over")
+                .arg(this)
+                .spawn()
+                .map_err(|e| format!("Could not start the new version: {e}"))
+        });
+        match started {
+            Ok(_) => unsafe {
+                DestroyWindow(self.hwnd);
+            },
             Err(e) => {
                 let page = self
                     .update
