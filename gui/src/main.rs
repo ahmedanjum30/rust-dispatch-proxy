@@ -16,20 +16,20 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(windows)]
-mod app;
-#[cfg(windows)]
 mod control;
 #[cfg(windows)]
 mod settings;
 #[cfg(windows)]
 mod status;
+#[cfg(windows)]
+mod win;
 
 #[cfg(windows)]
-fn main() -> eframe::Result {
+fn main() {
     let mut args = std::env::args().skip(1);
     if args.next().as_deref() == Some("--proxy") {
         rust_dispatch_proxy::run(args);
-        return Ok(());
+        return;
     }
 
     let settings = settings::Settings::load();
@@ -38,25 +38,14 @@ fn main() -> eframe::Result {
         if status::fetch(settings.port).is_none() {
             let _ = control::start(&settings);
         }
-        return Ok(());
+        return;
     }
     if std::env::args().any(|a| a == "--stop") {
         let _ = control::stop(settings.port);
-        return Ok(());
+        return;
     }
 
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("rust-dispatch-proxy")
-            .with_inner_size([760.0, 560.0])
-            .with_min_inner_size([600.0, 420.0]),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "rust-dispatch-proxy",
-        options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, settings)))),
-    )
+    win::run(settings);
 }
 
 #[cfg(not(windows))]

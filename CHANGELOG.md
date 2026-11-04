@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-04
+
+### Changed
+- The control panel is rebuilt with Windows' own controls (buttons,
+  checkboxes, edit boxes and a list view) instead of a GUI library.
+  `proxy-gui.exe` goes from about 6 MB to under 1 MB, uses about 2 MB of
+  memory while open instead of about 135 MB, looks and scales like a
+  built-in Windows tool, and builds about twice as fast. It now follows
+  Windows' light style.
+- The connections heading says when the proxy isn't running, and the message
+  line and the Windows-apps notice only take room when they have something
+  to show.
+
 ## [1.3.1] - 2026-11-04
 
 ### Added
@@ -120,7 +133,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.2.0...v1.2.1

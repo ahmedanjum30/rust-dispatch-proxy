@@ -76,7 +76,7 @@ From the [Releases](https://github.com/ahmedanjum30/rust-dispatch-proxy/releases
 | Download | What it is |
 |---|---|
 | `rust-dispatch-proxy-<version>-<platform>.zip` (`.tar.gz` on Linux) | The proxy (`rust-dispatch-proxy.exe`), plus `wintun.dll` for TUN mode, the README and licenses |
-| `proxy-gui-<version>-<platform>.exe` (Windows) | **Everything in one file:** the proxy plus its control panel (see [The control panel](#the-control-panel-windows)). Nothing else to download |
+| `proxy-gui-<version>-<platform>.exe` (Windows) | **Everything in one file, under 1 MB:** the proxy plus its control panel (see [The control panel](#the-control-panel-windows)). Nothing else to download |
 
 Most Windows users only need the `proxy-gui` exe: save it anywhere and double-click it. The zip is for using the proxy from a terminal, and for TUN mode. Use the `x86_64` downloads for most PCs and `aarch64` for ARM laptops.
 
@@ -105,7 +105,7 @@ For TUN mode on Windows, download Wintun from [wintun.net](https://www.wintun.ne
 
 ### The control panel (Windows)
 
-Download `proxy-gui-<version>-<platform>.exe` from the Releases page and double-click it. It needs no other files: the proxy is built into it. From its window you can:
+Download `proxy-gui-<version>-<platform>.exe` from the Releases page and double-click it. It needs no other files: the proxy is built into it, and the whole thing is under 1 MB. The window uses Windows' own controls, so it looks and scales like any built-in Windows tool. From its window you can:
 
 - **Start, stop and restart** the proxy. It runs hidden in the background.
 - **See every connection live:** download and upload speed, open connections, connect time and failures.
@@ -328,8 +328,8 @@ src/
 ├── http.rs       HTTP proxy (CONNECT and plain-HTTP forwarding)
 ├── net.rs        Sockets pinned to a specific network adapter
 └── tun_mode.rs   System-wide mode: Wintun adapter, routes, user-space TCP/IP stack
-gui/src/          proxy-gui.exe, the Windows control panel (egui)
-├── app.rs        The window
+gui/src/          proxy-gui.exe, the Windows control panel (native Windows controls)
+├── win.rs        The window
 ├── control.rs    Starting and stopping the proxy, start at login
 ├── settings.rs   Saved settings and the proxy's command line
 └── status.rs     Reading /status.json once a second
