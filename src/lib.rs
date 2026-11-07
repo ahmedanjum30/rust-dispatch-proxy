@@ -226,6 +226,11 @@ pub(crate) struct Balancer {
     /// Start the next link alongside a slow one after this long (None: only
     /// after a failure).
     race_delay: Option<Duration>,
+    /// When a VPN or firewall forbids connections pinned to an adapter, make
+    /// them unpinned instead (they then go wherever the system routes them,
+    /// e.g. through the VPN). Off in TUN mode, where unpinned connections
+    /// would loop back into the TUN adapter.
+    unpinned_fallback: bool,
 }
 
 /// Keeps a link's active-connection count accurate for as long as it lives.
@@ -301,6 +306,7 @@ impl Balancer {
             rotation: AtomicUsize::new(0),
             connect_timeout,
             race_delay,
+            unpinned_fallback: true,
         }
     }
 
@@ -485,13 +491,49 @@ enum Failure {
     Remote(io::Error),
 }
 
-async fn connect_via(egress: &Egress, dst: SocketAddrV4, limit: Duration) -> Result<TcpStream, Failure> {
-    let socket = net::tcp_socket(egress).map_err(Failure::Link)?;
+async fn connect_via(egress: &Egress, dst: SocketAddrV4, limit: Duration, fallback: bool) -> Result<TcpStream, Failure> {
+    let pinned = match net::tcp_socket(egress) {
+        Ok(socket) => timeout(limit, socket.connect(SocketAddr::V4(dst))).await,
+        Err(e) => Ok(Err(e)),
+    };
+    match pinned {
+        Ok(Ok(stream)) => Ok(stream),
+        // "Access forbidden" (Windows error 10013): a VPN such as Cloudflare
+        // WARP, or a firewall, blocks connections that go around it. Let the
+        // system route this one instead, which sends it through the VPN.
+        Ok(Err(e)) if fallback && e.kind() == io::ErrorKind::PermissionDenied => {
+            warn_blocked(egress);
+            connect_unpinned(dst, limit).await
+        }
+        Ok(Err(e)) if e.kind() == io::ErrorKind::ConnectionRefused => Err(Failure::Refused(e)),
+        Ok(Err(e)) => Err(Failure::Link(e)),
+        Err(_) => Err(Failure::Link(io::Error::new(io::ErrorKind::TimedOut, "connect timed out"))),
+    }
+}
+
+/// A connection the system routes as it likes (not pinned to an adapter).
+async fn connect_unpinned(dst: SocketAddrV4, limit: Duration) -> Result<TcpStream, Failure> {
+    let socket = tokio::net::TcpSocket::new_v4().map_err(Failure::Link)?;
     match timeout(limit, socket.connect(SocketAddr::V4(dst))).await {
         Ok(Ok(stream)) => Ok(stream),
         Ok(Err(e)) if e.kind() == io::ErrorKind::ConnectionRefused => Err(Failure::Refused(e)),
         Ok(Err(e)) => Err(Failure::Link(e)),
         Err(_) => Err(Failure::Link(io::Error::new(io::ErrorKind::TimedOut, "connect timed out"))),
+    }
+}
+
+/// Explains (at most every 10 minutes) why connections aren't spread over
+/// the links while a VPN blocks them.
+fn warn_blocked(egress: &Egress) {
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    let now = now_ms();
+    let last = LAST.load(Relaxed);
+    if (last == 0 || now.saturating_sub(last) >= 10 * 60 * 1000) && LAST.compare_exchange(last, now.max(1), Relaxed, Relaxed).is_ok() {
+        warn!(
+            "Connections through {} ({}) are blocked by a VPN (such as Cloudflare WARP) or a firewall. \
+             Sending them the way the system routes them instead: through the VPN, and not spread over your connections.",
+            egress.ip, egress.if_name
+        );
     }
 }
 
@@ -642,11 +684,12 @@ pub(crate) async fn dial(balancer: &Balancer, target: &Target) -> io::Result<Con
             let guard = ActiveGuard::new(link);
             let dst = (!dests.is_empty()).then(|| dests[attempts % dests.len()]);
             let limit = balancer.connect_timeout;
+            let fallback = balancer.unpinned_fallback;
             let target = target.clone();
             racing.push(Box::pin(async move {
                 let started = Instant::now();
                 let result = match (&guard.0.via, dst) {
-                    (Via::Adapter(egress), Some(dst)) => connect_via(egress, dst, limit).await,
+                    (Via::Adapter(egress), Some(dst)) => connect_via(egress, dst, limit, fallback).await,
                     (Via::Adapter(_), None) => Err(Failure::Link(io::Error::other("no address to connect to"))),
                     (Via::Upstream(up), _) => connect_upstream(up, &target, limit).await,
                 };
@@ -1157,7 +1200,9 @@ pub fn run(args: impl Iterator<Item = String>) {
         } else {
             cfg.links
         };
-        let balancer = Arc::new(Balancer::new(links, cfg.connect_timeout, cfg.race_delay));
+        let mut balancer = Balancer::new(links, cfg.connect_timeout, cfg.race_delay);
+        balancer.unpinned_fallback = !cfg.tun;
+        let balancer = Arc::new(balancer);
         log_links(&balancer.links());
 
         let bind = SocketAddrV4::new(cfg.lhost, cfg.lport);

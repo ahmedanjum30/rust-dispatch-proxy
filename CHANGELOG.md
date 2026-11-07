@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-11-08
+
+### Fixed
+- With a VPN such as Cloudflare WARP connected, every site failed with
+  "502 Bad Gateway": the VPN blocks connections that go around it (Windows
+  error 10013), and the proxy pins every connection to an adapter. Such a
+  connection is now sent the way Windows routes it instead, through the VPN.
+  While the VPN is on, traffic goes through its single tunnel and isn't
+  spread over your connections; the log says so once instead of logging
+  every failure. TUN mode is unchanged.
+
 ## [1.4.3] - 2026-11-04
 
 ### Changed
@@ -177,7 +188,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.4...HEAD
+[1.4.4]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.0...v1.4.1
