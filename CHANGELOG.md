@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-18
+
+### Added
+- SOCKS5 UDP relaying (`UDP ASSOCIATE`), in both `rust-dispatch-proxy` and
+  `proxy-gui.exe`. Apps that send UDP through SOCKS5 (games, voice chat,
+  QUIC, DNS) now work through the proxy. Each UDP session goes out through
+  one link, so the far end always sees one address; separate sessions are
+  spread over the links like TCP connections. Only the client that opened
+  a session can use its relay, and the session ends when the client closes
+  its SOCKS connection. UDP traffic is counted on the status page. Not
+  available with `-tunnel`, whose SOCKS5 upstreams can't carry it.
+
 ## [1.4.4] - 2026-11-08
 
 ### Fixed
@@ -188,7 +200,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.4...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.4...v1.5.0
 [1.4.4]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.1...v1.4.2

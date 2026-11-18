@@ -1,6 +1,6 @@
 [package]
 name = "proxy-gui"
-version = "1.4.4"
+version = "1.5.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Windows control panel for rust-dispatch-proxy"

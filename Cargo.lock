@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "proxy-gui"
-version = "1.4.4"
+version = "1.5.0"
 dependencies = [
  "embed-manifest",
  "rust-dispatch-proxy",
@@ -438,7 +438,7 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
 name = "rust-dispatch-proxy"
-version = "1.4.4"
+version = "1.5.0"
 dependencies = [
  "if-addrs",
  "ipstack",

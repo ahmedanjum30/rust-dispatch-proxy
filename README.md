@@ -29,7 +29,7 @@ It's a Rust rewrite of [go-dispatch-proxy](https://github.com/extremecoders-re/g
 ## Features
 
 - **Three ways in**
-  - **SOCKS5** for any app that supports a SOCKS proxy (browsers, download managers, torrent clients, `curl`).
+  - **SOCKS5** for any app that supports a SOCKS proxy (browsers, download managers, torrent clients, `curl`), including **UDP** for apps that send it through SOCKS5 (`UDP ASSOCIATE`): each UDP session stays on one link, and separate sessions are spread over your links.
   - **HTTP proxy** on the same port, so you can point **Windows' own proxy setting** at it and every app that follows that setting is balanced.
   - **TUN mode** (`-tun`) adds a virtual network adapter that captures **all IPv4 traffic from every app**, TCP and UDP, with no per-app setup.
 - **Two kinds of links.** Combine local network adapters, or use `-tunnel` to combine upstream SOCKS5 proxies such as `ssh -D` tunnels to several servers.
@@ -61,7 +61,7 @@ Balancing is **per connection**, not per packet. A single connection, such as on
 | | SOCKS5 / HTTP proxy | Windows proxy setting | TUN mode (`-tun`) |
 |---|---|---|---|
 | Which apps are balanced | Apps you configure | Apps that follow the system proxy (most browsers, many desktop apps) | **All apps** |
-| UDP (games, QUIC, VoIP) | No | No | Yes, each flow stays on one link |
+| UDP (games, QUIC, VoIP) | Yes, from apps that support SOCKS5 UDP; each session stays on one link | No | Yes, each flow stays on one link |
 | Admin rights | No | No | **Yes** |
 | Extra files | None | None | `wintun.dll` (included in releases) |
 
@@ -258,7 +258,7 @@ Existing go-dispatch-proxy command lines, including `-tunnel`, work unchanged.
 | A link is down | Connection fails after the OS timeout (~21 s on Windows) | Fails over to the next link after 4 s (`-timeout`) and skips the dead link for 10 s |
 | Protocols | SOCKS5 | SOCKS5 and HTTP proxy on the same port |
 | Windows system proxy | No | Yes |
-| All apps, including UDP | No | `-tun` |
+| UDP | No | SOCKS5 `UDP ASSOCIATE`, or all apps with `-tun` |
 | Traffic kept on the chosen adapter | Bound to the IP address | Bound to the IP address and pinned to the adapter |
 | `-tunnel` (balance across SSH SOCKS tunnels) | Yes | Yes, with failover; hostnames resolved at the far end |
 | Logging | Every connection | Only with `-verbose` |
@@ -291,7 +291,7 @@ Register-ScheduledTask -TaskName "rust-dispatch-proxy" -Action $action -Trigger 
 - **IPv4 only.** IPv6 destinations are refused by the SOCKS5/HTTP proxy, and TUN mode doesn't capture IPv6 traffic, which goes out normally and unbalanced. To balance everything in TUN mode, turn off IPv6 on your adapters.
 - **No ICMP.** In TUN mode `ping` and `tracert` don't work. TCP and UDP do.
 - **DNS** for proxied hostnames uses the system resolver. In TUN mode, apps' own DNS queries are captured and balanced like any other UDP traffic.
-- **SOCKS5:** only `CONNECT` is supported, with no `BIND` or `UDP ASSOCIATE`, and no username/password authentication.
+- **SOCKS5:** `CONNECT` and `UDP ASSOCIATE` are supported; `BIND` and username/password authentication are not. UDP needs adapter links: with `-tunnel` it's refused, because SOCKS5 upstreams can't carry it that way. UDP datagrams split into fragments and IPv6 destinations are dropped.
 - **TUN mode** is fully automatic on Windows only. On Linux the device is created but you must add the routes yourself, for example `ip route add 0.0.0.0/1 dev DispatchProxy` and `ip route add 128.0.0.0/1 dev DispatchProxy`. Treat it as experimental. Other platforms support only the SOCKS5/HTTP proxy.
 
 ## Security

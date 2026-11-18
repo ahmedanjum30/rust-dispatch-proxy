@@ -13,9 +13,7 @@
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use tokio::net::TcpSocket;
-#[cfg(feature = "tun")]
-use tokio::net::UdpSocket;
+use tokio::net::{TcpSocket, UdpSocket};
 
 /// Where an outgoing socket should leave the machine.
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +31,6 @@ pub fn tcp_socket(egress: &Egress) -> io::Result<TcpSocket> {
     Ok(socket)
 }
 
-#[cfg(feature = "tun")]
 pub fn udp_socket(egress: &Egress) -> io::Result<UdpSocket> {
     let std_socket = std::net::UdpSocket::bind(SocketAddrV4::new(egress.ip, 0))?;
     std_socket.set_nonblocking(true)?;
@@ -73,7 +70,7 @@ fn pin_tcp(socket: &TcpSocket, egress: &Egress) -> io::Result<()> {
     }
 }
 
-#[cfg(all(windows, feature = "tun"))]
+#[cfg(windows)]
 fn pin_udp(socket: &UdpSocket, egress: &Egress) -> io::Result<()> {
     use std::os::windows::io::AsRawSocket;
     match egress.if_index {
@@ -89,7 +86,7 @@ fn pin_tcp(socket: &TcpSocket, egress: &Egress) -> io::Result<()> {
     socket.bind_device(Some(egress.if_name.as_bytes()))
 }
 
-#[cfg(all(target_os = "linux", feature = "tun"))]
+#[cfg(target_os = "linux")]
 fn pin_udp(socket: &UdpSocket, egress: &Egress) -> io::Result<()> {
     socket.bind_device(Some(egress.if_name.as_bytes()))
 }
@@ -101,7 +98,7 @@ fn pin_tcp(_: &TcpSocket, _: &Egress) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(all(not(any(windows, target_os = "linux")), feature = "tun"))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn pin_udp(_: &UdpSocket, _: &Egress) -> io::Result<()> {
     Ok(())
 }

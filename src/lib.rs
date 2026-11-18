@@ -62,6 +62,7 @@ mod status;
 mod sysproxy;
 #[cfg(feature = "tun")]
 mod tun_mode;
+mod udp;
 
 use net::Egress;
 
@@ -389,6 +390,8 @@ impl std::fmt::Display for Target {
 
 enum Request {
     Connect(Target),
+    /// UDP ASSOCIATE: relay the client's UDP datagrams (see udp.rs).
+    UdpAssociate,
     Rejected, // a SOCKS error reply was already sent
 }
 
@@ -455,12 +458,17 @@ async fn read_request(client: &mut TcpStream) -> io::Result<Request> {
         }
     };
 
-    if cmd != 1 {
-        // Only CONNECT (TCP) is supported; no BIND or UDP ASSOCIATE.
-        send_reply(client, REP_COMMAND_NOT_SUPPORTED, None).await?;
-        return Ok(Request::Rejected);
+    match cmd {
+        1 => Ok(Request::Connect(target)),
+        // The address the client gives is where it will send from; often
+        // 0.0.0.0:0. The relay accepts only the client's own address anyway.
+        3 => Ok(Request::UdpAssociate),
+        _ => {
+            // BIND is not supported.
+            send_reply(client, REP_COMMAND_NOT_SUPPORTED, None).await?;
+            Ok(Request::Rejected)
+        }
     }
-    Ok(Request::Connect(target))
 }
 
 pub(crate) async fn resolve(target: &Target) -> Vec<SocketAddrV4> {
@@ -787,6 +795,7 @@ async fn handle_socks(mut client: TcpStream, balancer: Arc<Balancer>) {
 
     let target = match timeout(HANDSHAKE_TIMEOUT, read_request(&mut client)).await {
         Ok(Ok(Request::Connect(t))) => t,
+        Ok(Ok(Request::UdpAssociate)) => return udp::associate(client, balancer).await,
         Ok(Ok(Request::Rejected)) => return,
         Ok(Err(e)) => {
             debug!("handshake failed: {e}");
