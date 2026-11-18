@@ -34,6 +34,7 @@ fn proxy_command() -> Result<Command, String> {
 
 /// Starts the proxy in the background with `settings`.
 pub fn start(settings: &Settings) -> Result<Child, String> {
+    let _ = settings.write_exclude_file(); // the proxy reads it at start
     start_with(&settings.args())
 }
 

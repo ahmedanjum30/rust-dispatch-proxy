@@ -13,6 +13,15 @@ pub struct Status {
     pub version: String,
     pub uptime_s: u64,
     pub links: Vec<LinkStatus>,
+    /// Connections switched off (not used); missing from older versions.
+    #[serde(default)]
+    pub excluded: Vec<ExcludedLink>,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ExcludedLink {
+    pub link: String,
+    pub adapter: String,
 }
 
 #[derive(Clone, Deserialize)]

@@ -18,6 +18,8 @@ pub struct Settings {
     /// -race, in milliseconds (0 = off).
     pub race_ms: u64,
     pub verbose: bool,
+    /// Connections switched off in the list (adapter names, e.g. "Wi-Fi").
+    pub excluded: Vec<String>,
 }
 
 impl Default for Settings {
@@ -30,6 +32,7 @@ impl Default for Settings {
             min_links: 2,
             race_ms: 300,
             verbose: false,
+            excluded: Vec::new(),
         }
     }
 }
@@ -50,6 +53,12 @@ fn settings_path() -> PathBuf {
     data_dir().join("gui-settings.json")
 }
 
+/// The proxy's -exclude-file: the switched-off connections, which the
+/// running proxy re-reads every second.
+pub fn exclude_path() -> PathBuf {
+    data_dir().join("excluded-connections.txt")
+}
+
 impl Settings {
     pub fn load() -> Self {
         std::fs::read_to_string(settings_path())
@@ -61,7 +70,36 @@ impl Settings {
     pub fn save(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(data_dir())?;
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(settings_path(), json)
+        std::fs::write(settings_path(), json)?;
+        self.write_exclude_file()
+    }
+
+    /// Writes the switched-off connections where the proxy looks for them.
+    pub fn write_exclude_file(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(data_dir())?;
+        let mut text = String::from("# Connections switched off in proxy-gui (adapter names)\n");
+        for name in &self.excluded {
+            text.push_str(name);
+            text.push('\n');
+        }
+        // Only when it changed, so the proxy doesn't log a change that isn't one.
+        if std::fs::read_to_string(exclude_path()).ok().as_deref() != Some(text.as_str()) {
+            std::fs::write(exclude_path(), text)?;
+        }
+        Ok(())
+    }
+
+    /// Whether the connection on this adapter is switched on.
+    pub fn uses(&self, adapter: &str) -> bool {
+        !self.excluded.iter().any(|e| e.eq_ignore_ascii_case(adapter))
+    }
+
+    /// Switches the connection on this adapter on or off.
+    pub fn set_used(&mut self, adapter: &str, on: bool) {
+        self.excluded.retain(|e| !e.eq_ignore_ascii_case(adapter));
+        if !on {
+            self.excluded.push(adapter.to_string());
+        }
     }
 
     /// The proxy's command line for these settings.
@@ -79,6 +117,7 @@ impl Settings {
         if self.verbose {
             args.push("-verbose".into());
         }
+        args.extend(["-exclude-file".into(), exclude_path().to_string_lossy().into_owned()]);
         args.extend(["-log".into(), log_path().to_string_lossy().into_owned()]);
         args
     }
@@ -95,7 +134,22 @@ mod tests {
             &args[..8],
             ["-lport", "8080", "-auto", "-system-proxy", "-min-links", "2", "-race", "300"]
         );
-        assert_eq!(args[8], "-log");
+        assert_eq!(args[8], "-exclude-file");
+        assert!(args[9].ends_with("excluded-connections.txt"));
+        assert_eq!(args[10], "-log");
+    }
+
+    #[test]
+    fn switching_connections_on_and_off() {
+        let mut s = Settings::default();
+        assert!(s.uses("Wi-Fi"));
+        s.set_used("Wi-Fi", false);
+        s.set_used("Wi-Fi", false); // listed once
+        assert!(!s.uses("wi-fi"));
+        assert_eq!(s.excluded, ["Wi-Fi"]);
+        s.set_used("WI-FI", true);
+        assert!(s.uses("Wi-Fi"));
+        assert!(s.excluded.is_empty());
     }
 
     #[test]

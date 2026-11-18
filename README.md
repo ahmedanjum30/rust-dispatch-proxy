@@ -109,6 +109,7 @@ Download `proxy-gui-<version>-<platform>.exe` from the Releases page and double-
 
 - **Start, stop and restart** the proxy. It runs hidden in the background.
 - **See every connection live:** download and upload speed, open connections, connect time and failures.
+- **Switch connections on and off** with the tick box next to each one. It applies within a second, without restarting the proxy, and is remembered.
 - **Change the settings:** port, finding connections automatically or listing them yourself, managing the Windows proxy setting, and the race delay.
 - **Start it automatically when you log in.**
 - **Open the status page or the log.**

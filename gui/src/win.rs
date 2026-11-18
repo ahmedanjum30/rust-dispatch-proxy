@@ -18,9 +18,10 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::{
     BST_CHECKED, BST_UNCHECKED, ICC_LISTVIEW_CLASSES, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, LVCF_FMT, LVCF_TEXT,
-    LVCF_WIDTH, LVCFMT_LEFT, LVCFMT_RIGHT, LVCOLUMNW, LVIF_TEXT, LVITEMW, LVM_DELETEALLITEMS, LVM_GETITEMCOUNT, LVM_INSERTCOLUMNW, LVM_INSERTITEMW,
-    LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMTEXTW, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_NOSORTHEADER, LVS_REPORT,
-    LVS_SINGLESEL, WC_LISTVIEWW,
+    LVCF_WIDTH, LVCFMT_LEFT, LVCFMT_RIGHT, LVCOLUMNW, LVIF_STATE, LVIF_TEXT, LVIS_STATEIMAGEMASK, LVITEMW, LVM_DELETEALLITEMS, LVM_GETITEMCOUNT,
+    LVM_GETITEMSTATE, LVM_INSERTCOLUMNW, LVM_INSERTITEMW, LVM_SETCOLUMNWIDTH, LVM_SETEXTENDEDLISTVIEWSTYLE, LVM_SETITEMSTATE, LVM_SETITEMTEXTW,
+    LVN_ITEMCHANGED, LVS_EX_CHECKBOXES, LVS_EX_DOUBLEBUFFER, LVS_EX_FULLROWSELECT, LVS_NOSORTHEADER, LVS_REPORT, LVS_SINGLESEL, NMHDR, NMLISTVIEW,
+    WC_LISTVIEWW,
 };
 use windows_sys::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
@@ -30,7 +31,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindowVisible, IsZoomed, LoadCursorW, LoadIconW,
     MINMAXINFO, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassExW, SW_HIDE, SW_SHOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
     SendMessageW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_APP, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY,
-    WM_DPICHANGED, WM_GETMINMAXINFO, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WM_DPICHANGED, WM_GETMINMAXINFO, WM_NOTIFY, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD, WS_EX_CLIENTEDGE, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+    WS_VISIBLE,
 };
 
 use crate::control;
@@ -123,6 +125,8 @@ struct App {
     latest: Arc<Mutex<Reading>>,
     previous: Option<Reading>,
     rates: Vec<(String, f64, f64)>,
+    /// The adapter shown in each row of the list (None: the Total row).
+    row_adapters: Vec<Option<String>>,
     running: bool,
     child: Option<Child>,
     message: Option<(String, bool)>,
@@ -291,6 +295,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             with_app(|app| app.command(id, code));
             0
         }
+        WM_NOTIFY => {
+            // A connection's tick box was clicked (or toggled with Space).
+            // Changes the window makes itself arrive while the app is in use
+            // and are skipped by with_app.
+            let hdr = unsafe { &*(lparam as *const NMHDR) };
+            if hdr.idFrom == ID_LIST as usize && hdr.code == LVN_ITEMCHANGED {
+                let nm = unsafe { &*(lparam as *const NMLISTVIEW) };
+                let image = |state: u32| (state & LVIS_STATEIMAGEMASK) >> 12;
+                if nm.iItem >= 0 && nm.uChanged & LVIF_STATE != 0 && image(nm.uOldState) != 0 && image(nm.uNewState) != image(nm.uOldState) {
+                    let (row, on) = (nm.iItem as usize, image(nm.uNewState) == 2);
+                    with_app(|app| app.switch_connection(row, on));
+                }
+            }
+            0
+        }
         WM_CTLCOLORSTATIC => {
             let hdc = wparam as HDC;
             let ctl = lparam as HWND;
@@ -337,6 +356,7 @@ impl App {
             latest,
             previous: None,
             rates: Vec::new(),
+            row_adapters: Vec::new(),
             running: false,
             child: None,
             message: None,
@@ -506,7 +526,8 @@ impl App {
                 std::ptr::null(),
             );
             let list = self.ctl(ID_LIST);
-            let ex = (LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as isize;
+            // Tick boxes switch each connection on or off.
+            let ex = (LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_CHECKBOXES) as isize;
             SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE, ex as usize, ex);
             for (i, (title, _, right)) in COLUMNS.iter().enumerate() {
                 let mut text = wide(title);
@@ -1038,23 +1059,50 @@ impl App {
         self.previous = Some(now.clone());
     }
 
-    fn fill_table(&self, reading: &Reading) {
+    fn fill_table(&mut self, reading: &Reading) {
         let mut rows: Vec<[String; 9]> = Vec::new();
+        let mut adapters: Vec<Option<String>> = Vec::new();
         // When there's nothing to list, the heading says why.
         self.set_text(
             ID_CONNECTIONS,
             match &reading.status {
                 None => "Connections: the proxy isn't running. Press Start.",
-                Some(s) if s.links.is_empty() => "Connections: no internet connections found yet.",
-                Some(_) => "Connections",
+                Some(s) if s.links.is_empty() && s.excluded.is_empty() => "Connections: no internet connections found yet.",
+                Some(_) => "Connections (untick one to stop using it)",
             },
         );
         match &reading.status {
             None => {}
-            Some(s) if s.links.is_empty() => {}
+            Some(s) if s.links.is_empty() && s.excluded.is_empty() => {}
             Some(s) => {
+                // Connections in use and switched off together, in address
+                // order, so a row doesn't jump when it's switched on or off.
+                let mut entries: Vec<(&str, &str, Option<&status::LinkStatus>)> = s
+                    .links
+                    .iter()
+                    .map(|l| (l.link.as_str(), l.adapter.as_str(), Some(l)))
+                    .chain(s.excluded.iter().map(|e| (e.link.as_str(), e.adapter.as_str(), None)))
+                    .collect();
+                entries.sort_by_key(|e| e.0.parse::<std::net::Ipv4Addr>().ok());
+
                 let (mut down_sum, mut up_sum, mut open_sum, mut total_down) = (0.0, 0.0, 0, 0);
-                for l in &s.links {
+                for (link, adapter, stats) in entries {
+                    adapters.push(Some(adapter.to_string()));
+                    // Switched off here, or not used by the proxy (yet).
+                    let Some(l) = stats.filter(|_| self.settings.uses(adapter)) else {
+                        rows.push([
+                            link.to_string(),
+                            format!("{adapter} (off)"),
+                            "-".into(),
+                            "-".into(),
+                            "".into(),
+                            "".into(),
+                            "".into(),
+                            "".into(),
+                            "".into(),
+                        ]);
+                        continue;
+                    };
                     let (down, up) = self.rates.iter().find(|r| r.0 == l.link).map_or((0.0, 0.0), |r| (r.1, r.2));
                     down_sum += down;
                     up_sum += up;
@@ -1081,6 +1129,7 @@ impl App {
                         size(l.bytes_down),
                     ]);
                 }
+                adapters.push(None);
                 rows.push([
                     "Total".into(),
                     "".into(),
@@ -1137,7 +1186,50 @@ impl App {
                         SendMessageW(list, LVM_SETITEMTEXTW, i, &item as *const _ as LPARAM);
                     }
                 }
+                // Tick box: 2 = ticked, 1 = unticked, 0 = none (Total row).
+                let image: u32 = match &adapters[i] {
+                    Some(a) if self.settings.uses(a) => 2,
+                    Some(_) => 1,
+                    None => 0,
+                };
+                let current = SendMessageW(list, LVM_GETITEMSTATE, i, LVIS_STATEIMAGEMASK as LPARAM) as u32 & LVIS_STATEIMAGEMASK;
+                if current != image << 12 {
+                    let item = LVITEMW {
+                        stateMask: LVIS_STATEIMAGEMASK,
+                        state: image << 12,
+                        ..std::mem::zeroed()
+                    };
+                    SendMessageW(list, LVM_SETITEMSTATE, i, &item as *const _ as LPARAM);
+                }
             }
+        }
+        self.row_adapters = adapters;
+    }
+
+    /// A connection's tick box was clicked: switch it on or off. The proxy
+    /// picks the change up within a second, without restarting; connections
+    /// already open on a switched-off link carry on until they close.
+    fn switch_connection(&mut self, row: usize, on: bool) {
+        let Some(Some(adapter)) = self.row_adapters.get(row).cloned() else {
+            return;
+        };
+        if self.settings.uses(&adapter) == on {
+            return;
+        }
+        self.settings.set_used(&adapter, on);
+        if let Err(e) = self.settings.save() {
+            self.error(format!("Could not save settings: {e}"));
+            return;
+        }
+        let any_on = self.row_adapters.iter().flatten().any(|a| self.settings.uses(a));
+        if !any_on {
+            self.error("No connection is ticked, so the proxy has nothing to use.");
+        } else if on {
+            self.info(format!("{adapter} switched on."));
+        } else {
+            self.info(format!(
+                "{adapter} switched off. Downloads already running on it carry on until they finish."
+            ));
         }
     }
 }

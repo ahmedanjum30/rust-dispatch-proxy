@@ -35,6 +35,18 @@ pub(crate) fn json(balancer: &Balancer) -> String {
             link.down_until_ms.load(Relaxed).saturating_sub(now).div_ceil(1000),
         );
     }
+    // Adapters switched off with -exclude-file: not used, but listed so a
+    // control panel can offer to switch them on again.
+    out.push_str("],\"excluded\":[");
+    for (i, e) in balancer.excluded().iter().enumerate() {
+        let _ = write!(
+            out,
+            "{}{{\"link\":\"{}\",\"adapter\":\"{}\"}}",
+            if i > 0 { "," } else { "" },
+            e.ip,
+            escape(&e.if_name)
+        );
+    }
     out.push_str("]}");
     out
 }

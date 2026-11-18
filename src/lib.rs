@@ -54,6 +54,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
 mod auto;
+mod exclude;
 mod http;
 mod log;
 mod net;
@@ -232,6 +233,9 @@ pub(crate) struct Balancer {
     /// e.g. through the VPN). Off in TUN mode, where unpinned connections
     /// would loop back into the TUN adapter.
     unpinned_fallback: bool,
+    /// Adapters that would be links but are switched off (-exclude-file),
+    /// listed on the status page so they can be switched on again.
+    excluded: RwLock<Vec<Egress>>,
 }
 
 /// Keeps a link's active-connection count accurate for as long as it lives.
@@ -308,11 +312,24 @@ impl Balancer {
             connect_timeout,
             race_delay,
             unpinned_fallback: true,
+            excluded: RwLock::new(Vec::new()),
         }
     }
 
     pub(crate) fn links(&self) -> Links {
         self.links.read().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    pub(crate) fn excluded(&self) -> Vec<Egress> {
+        self.excluded.read().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// Records the switched-off adapters; returns whether that changed.
+    fn set_excluded(&self, off: Vec<Egress>) -> bool {
+        let mut slot = self.excluded.write().unwrap_or_else(PoisonError::into_inner);
+        let changed = *slot != off;
+        *slot = off;
+        changed
     }
 
     /// Replaces the set of links. Links that are still wanted keep their
@@ -839,6 +856,8 @@ struct Config {
     auto: bool,
     system_proxy: SystemProxy,
     links: Vec<(Via, u64)>,
+    /// -exclude-file: adapters switched off, re-read every second.
+    exclude_file: Option<String>,
 }
 
 /// -system-proxy: whether to manage Windows' proxy setting, and how many
@@ -919,6 +938,8 @@ fn usage() -> ! {
          \x20 -timeout SECS   connect timeout per link (default 4)\n\
          \x20 -race MS        start the next link if one hasn't connected within MS\n\
          \x20                 milliseconds; first to connect wins (default 300, 0 = off)\n\
+         \x20 -exclude-file FILE  don't use the adapters named in FILE (adapter names or\n\
+         \x20                 addresses, one per line); changes apply within a second\n\
          {TUN_HELP}\
          \x20 -tunnel         links are upstream SOCKS5 proxies (e.g. `ssh -D` tunnels)\n\
          \x20                 instead of local addresses\n\
@@ -958,6 +979,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Config {
         min_links: 2,
     };
     let mut log_path: Option<String> = None;
+    let mut exclude_file: Option<String> = None;
     let mut system_proxy_off = false;
     let mut specs = Vec::new();
 
@@ -1016,6 +1038,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Config {
                     system_proxy_off = true;
                 }
                 "log" => log_path = Some(value("log")),
+                "exclude-file" => exclude_file = Some(value("exclude-file")),
                 "min-links" => {
                     let v = value("min-links");
                     system_proxy.min_links = v.parse().unwrap_or_else(|_| fatal(format!("Invalid number {v}")));
@@ -1100,6 +1123,24 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Config {
         auto,
         system_proxy,
         links,
+        exclude_file,
+    }
+}
+
+/// Puts the links in use: the candidates, minus the adapters switched off.
+/// Logs and updates the system proxy setting if anything changed.
+fn select_links(balancer: &Balancer, candidates: Vec<(Via, u64)>, rules: &exclude::Rules, system_proxy: SystemProxy, why: &str) {
+    let (links, off) = rules.split(candidates);
+    if balancer.set_excluded(off) {
+        for e in balancer.excluded() {
+            info!("Not using {} ({}): switched off", e.ip, e.if_name);
+        }
+    }
+    if balancer.set_links(links) {
+        let links = balancer.links();
+        info!("{why}: {} connection(s) in use", links.len());
+        log_links(&links);
+        system_proxy.sync(links.len());
     }
 }
 
@@ -1203,16 +1244,23 @@ pub fn run(args: impl Iterator<Item = String>) {
         .unwrap_or_else(|e| fatal(format!("Could not start runtime: {e}")));
 
     runtime.block_on(async move {
-        let links = if cfg.auto {
+        let rules = exclude::Rules::parse(&exclude::read(cfg.exclude_file.as_deref()));
+        let candidates = if cfg.auto {
             auto::start_watching(); // before detecting, so no change is missed
             detected_links()
         } else {
-            cfg.links
+            cfg.links.clone()
         };
+        let (links, off) = rules.split(candidates);
         let mut balancer = Balancer::new(links, cfg.connect_timeout, cfg.race_delay);
         balancer.unpinned_fallback = !cfg.tun;
+        balancer.set_excluded(off);
         let balancer = Arc::new(balancer);
+        let rules = Arc::new(std::sync::Mutex::new(rules));
         log_links(&balancer.links());
+        for e in balancer.excluded() {
+            info!("Not using {} ({}): switched off", e.ip, e.if_name);
+        }
 
         let bind = SocketAddrV4::new(cfg.lhost, cfg.lport);
         let listener = TcpListener::bind(bind)
@@ -1240,16 +1288,33 @@ pub fn run(args: impl Iterator<Item = String>) {
         system_proxy.sync(balancer.links().len());
 
         if cfg.auto {
-            let balancer = balancer.clone();
+            let (balancer, rules) = (balancer.clone(), rules.clone());
             tokio::spawn(async move {
                 loop {
                     auto::changed().await;
-                    if balancer.set_links(detected_links()) {
-                        let links = balancer.links();
-                        info!("Network changed: {} connection(s) in use", links.len());
-                        log_links(&links);
-                        system_proxy.sync(links.len());
+                    let rules = rules.lock().unwrap_or_else(PoisonError::into_inner);
+                    select_links(&balancer, detected_links(), &rules, system_proxy, "Network changed");
+                }
+            });
+        }
+
+        // Switching connections on and off while running.
+        if let Some(path) = cfg.exclude_file.clone() {
+            let (balancer, rules) = (balancer.clone(), rules.clone());
+            let (auto, fixed) = (cfg.auto, cfg.links.clone());
+            tokio::spawn(async move {
+                let mut last = exclude::read(Some(&path));
+                loop {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    let text = exclude::read(Some(&path));
+                    if text == last {
+                        continue;
                     }
+                    last = text;
+                    let mut rules = rules.lock().unwrap_or_else(PoisonError::into_inner);
+                    *rules = exclude::Rules::parse(&last);
+                    let candidates = if auto { detected_links() } else { fixed.clone() };
+                    select_links(&balancer, candidates, &rules, system_proxy, "Connections switched on/off");
                 }
             });
         }

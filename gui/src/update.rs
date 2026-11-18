@@ -142,7 +142,14 @@ pub fn take_over(old: &Path, port: u16) {
 /// same options.
 fn move_proxy(old: &Path, port: u16) {
     let Some(pid) = control::proxy_pid_from(port, old) else { return };
-    let args = control::proxy_args(pid);
+    let args = control::proxy_args(pid).map(|mut args| {
+        // Versions before 1.5.1 didn't pass the switched-off connections.
+        if !args.iter().any(|a| a == "-exclude-file") {
+            let _ = crate::settings::Settings::load().write_exclude_file();
+            args.extend(["-exclude-file".into(), crate::settings::exclude_path().to_string_lossy().into_owned()]);
+        }
+        args
+    });
     if control::stop_pid(pid, port).is_ok() {
         let _ = match args {
             Some(args) => control::start_with(&args),

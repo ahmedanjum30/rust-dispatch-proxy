@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-18
+
+### Added
+- Control panel: a tick box next to each connection. Untick one to stop
+  using it, tick it to use it again. The change applies within a second,
+  without restarting the proxy, and downloads already running on a
+  switched-off connection carry on until they finish. Switched-off
+  connections stay in the list, and the choice is remembered by adapter
+  name, so it survives address changes and restarts.
+- `-exclude-file FILE`: don't use the adapters named in FILE (names or
+  addresses, one per line). The proxy re-reads it every second. The status
+  data lists switched-off adapters under `excluded`.
+
 ## [1.5.0] - 2026-11-18
 
 ### Added
@@ -200,7 +213,8 @@ First public release.
   compatibility with go-dispatch-proxy.
 - Warning when listening on a non-loopback address without authentication.
 
-[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.4...v1.5.0
 [1.4.4]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/ahmedanjum30/rust-dispatch-proxy/compare/v1.4.2...v1.4.3
