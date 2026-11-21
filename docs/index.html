@@ -201,13 +201,23 @@
   .result { margin: 22px 0 0; padding: 16px 18px; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--radius-control); color: var(--text-2); max-width: 760px; }
   .result strong { color: var(--text); font-variant-numeric: tabular-nums; }
 
-  /* "who it's for" as a list view */
-  .scroll { overflow-x: auto; }
-  table.plain { width: 100%; border-collapse: collapse; font-size: 15px; border: 1px solid #b9b9b9; }
-  table.plain th { text-align: left; font-weight: 400; padding: 7px 12px; border-right: 1px solid var(--stroke); border-bottom: 1px solid var(--stroke); white-space: nowrap; }
-  table.plain td { text-align: left; padding: 9px 12px; vertical-align: top; border-bottom: 1px solid var(--stroke); width: 50%; }
-  table.plain tr:last-child td { border-bottom: 0; }
-  table.plain tbody tr:hover { background: var(--layer); }
+  /* "who it's for": ticked = speeds up, unticked = doesn't, as in the app */
+  /* drawn as a two-column table: outer frame, header bar, column divider */
+  .fit { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #b9b9b9; border-radius: var(--radius-control); overflow: hidden; }
+  .fit > div + div { border-left: 1px solid #d6d6d6; }
+  .fit h3 { font: 600 15px var(--font); margin: 0; padding: 10px 16px; background: #f3f3f3; border-bottom: 1px solid #d6d6d6; }
+  .fitlist { list-style: none; margin: 0; padding: 0; }
+  .fitlist li { display: grid; grid-template-columns: 18px 1fr; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--stroke); }
+  .fitlist li:last-child { border-bottom: 0; }
+  .fitlist li:hover { background: var(--layer); }
+  .fitlist .tick { margin-top: 3px; }
+  @media (max-width: 700px) {
+    .fit { grid-template-columns: 1fr; }
+    .fit > div + div { border-left: 0; border-top: 1px solid #b9b9b9; }
+  }
+
+  /* anchor jumps land below the sticky header */
+  main section { scroll-margin-top: 72px; }
 
   /* FAQ as Windows 11 expanders */
   details { background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--radius-control); margin-bottom: 4px; }
@@ -345,15 +355,23 @@
     <div class="wrap">
       <div class="group">
         <h2>Who it's for</h2>
-        <div class="scroll">
-          <table class="plain">
-            <thead><tr><th>Works great for</th><th>Doesn't speed up</th></tr></thead>
-            <tbody>
-              <tr><td>Download managers (Internet Download Manager and similar)</td><td>A single-stream download (one connection stays on one link)</td></tr>
-              <tr><td>Torrent clients set to use a SOCKS5 proxy</td><td>A single video call or game connection</td></tr>
-              <tr><td>Browsers loading many pages and files, cloud sync, game launchers</td><td>Sites that need one fixed IP address, like some banking sites (use those without the proxy)</td></tr>
-            </tbody>
-          </table>
+        <div class="fit">
+          <div>
+            <h3>Works great for</h3>
+            <ul class="fitlist">
+              <li><span class="tick"><svg><use href="#check"/></svg></span>Download managers (Internet Download Manager and similar)</li>
+              <li><span class="tick"><svg><use href="#check"/></svg></span>Torrent clients set to use a SOCKS5 proxy</li>
+              <li><span class="tick"><svg><use href="#check"/></svg></span>Browsers loading many pages and files, cloud sync, game launchers</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Doesn't speed up</h3>
+            <ul class="fitlist">
+              <li><span class="tick off"></span>A single-stream download (one connection stays on one link)</li>
+              <li><span class="tick off"></span>A single video call or game connection</li>
+              <li><span class="tick off"></span>Sites that need one fixed IP address, like some banking sites (use those without the proxy)</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
