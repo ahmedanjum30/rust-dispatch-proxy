@@ -228,10 +228,27 @@
   summary:hover { background: #f5f5f5; }
   details p { margin: 0; padding: 12px 16px 16px; border-top: 1px solid var(--stroke); background: var(--window); color: var(--text-2); }
 
-  .download { text-align: center; }
-  .download .group { padding-top: 40px; }
-  .download .group > p.sub { margin-left: auto; margin-right: auto; }
-  .download .cta { justify-content: center; }
+  /* downloads, in the same table frame as "Who it's for" */
+  .dl { border: 1px solid #b9b9b9; border-radius: var(--radius-control); overflow-x: auto; }
+  .dl table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .dl th { text-align: left; font-weight: 600; padding: 10px 16px; background: #f3f3f3; border-bottom: 1px solid #d6d6d6; white-space: nowrap; }
+  .dl td { padding: 12px 16px; border-bottom: 1px solid var(--stroke); vertical-align: middle; }
+  .dl tr:last-child td { border-bottom: 0; }
+  .dl tbody tr:hover { background: var(--layer); }
+  .dl tr.pick { background: #f0f6fc; }
+  .dl td b { display: block; font-weight: 600; }
+  .dl td span { color: var(--text-2); font-size: 14px; }
+  .dl td:nth-child(3) { color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dl td:last-child { text-align: right; white-space: nowrap; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .dl-foot { margin: 14px 0 0; color: var(--text-2); font-size: 14px; }
+  @media (max-width: 640px) {
+    .dl thead { display: none; }
+    .dl tr { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 14px; border-bottom: 1px solid var(--stroke); }
+    .dl td { padding: 0; border: 0; }
+    .dl td:nth-child(2), .dl td:nth-child(3) { grid-column: 1; font-size: 14px; color: var(--text-2); }
+    .dl td:last-child { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  }
 
   footer { padding: 26px 0 40px; color: var(--text-2); font-size: 14px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
@@ -255,6 +272,7 @@
     <nav aria-label="Main">
       <a class="btn optional" href="#features">Features</a>
       <a class="btn optional" href="#faq">FAQ</a>
+      <a class="btn optional" href="#download">Download</a>
       <a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy"><svg aria-hidden="true"><use href="#gh"/></svg>GitHub</a>
     </nav>
   </div>
@@ -266,10 +284,10 @@
       <h1>Use all your internet connections at once</h1>
       <p class="lead">Ethernet, Wi-Fi and a tethered phone, working together. <strong>rust-dispatch-proxy</strong> spreads your downloads across every connection you have, so you get their combined speed. Free for personal use.</p>
       <div class="cta">
-        <a class="btn primary big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download for Windows</a>
-        <a class="btn big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">View on GitHub</a>
+        <a class="btn primary big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/proxy-gui-v1.5.1-x86_64-pc-windows-msvc.exe"><svg aria-hidden="true"><use href="#win"/></svg>Download for Windows</a>
+        <a class="btn big" href="#download">Linux &amp; other downloads</a>
       </div>
-      <p class="meta">One file under 1 MB, no installer · Windows 10 &amp; 11 (x64 and ARM) · Linux command-line version</p>
+      <p class="meta">One file under 1 MB, no installer · Windows 10 &amp; 11 (x64 and ARM) · <a href="#download">Command-line version for Linux and Windows</a></p>
     </div>
 
     <figure class="window" aria-label="The rust-dispatch-proxy control panel with three connections downloading together">
@@ -392,15 +410,24 @@
     </div>
   </section>
 
-  <section id="download" class="download">
+  <section id="download">
     <div class="wrap">
       <div class="group">
-        <h2>Try it now</h2>
-        <p class="sub">Get <code>proxy-gui</code> for Windows (x64, or aarch64 for ARM laptops) from the latest release.</p>
-        <div class="cta">
-          <a class="btn primary big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download the latest release</a>
-          <a class="btn big" href="https://www.patreon.com/cw/ahmedanjum30">Support on Patreon</a>
+        <h2>Download</h2>
+        <p class="sub">Version 1.5.1. Most people want the first one: the control panel with the proxy built in, one file, no installer.</p>
+        <div class="dl">
+          <table>
+            <thead><tr><th>What</th><th>For</th><th>Size</th><th><span class="vh">Download</span></th></tr></thead>
+            <tbody>
+              <tr class="pick"><td><b>Control panel</b><span>Window with tick boxes, live speeds, start at login</span></td><td>Windows 10 &amp; 11, x64</td><td>798 KB</td><td><a class="btn primary" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/proxy-gui-v1.5.1-x86_64-pc-windows-msvc.exe">Download .exe</a></td></tr>
+              <tr><td><b>Control panel</b><span>Same, for ARM laptops (Snapdragon)</span></td><td>Windows on ARM</td><td>741 KB</td><td><a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/proxy-gui-v1.5.1-aarch64-pc-windows-msvc.exe">Download .exe</a></td></tr>
+              <tr><td><b>Command line</b><span>For terminals and scripts; includes TUN mode (all apps)</span></td><td>Linux, x64</td><td>474 KB</td><td><a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/rust-dispatch-proxy-v1.5.1-x86_64-unknown-linux-gnu.tar.gz">Download .tar.gz</a></td></tr>
+              <tr><td><b>Command line</b><span>Includes TUN mode and <code>wintun.dll</code></span></td><td>Windows, x64</td><td>668 KB</td><td><a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/rust-dispatch-proxy-v1.5.1-x86_64-pc-windows-msvc.zip">Download .zip</a></td></tr>
+              <tr><td><b>Command line</b><span>Includes TUN mode and <code>wintun.dll</code></span></td><td>Windows on ARM</td><td>544 KB</td><td><a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/download/v1.5.1/rust-dispatch-proxy-v1.5.1-aarch64-pc-windows-msvc.zip">Download .zip</a></td></tr>
+            </tbody>
+          </table>
         </div>
+        <p class="dl-foot">Linux: unpack and run <code>./rust-dispatch-proxy -auto</code>. Checksums and older versions are on the <a href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest">releases page</a>. · <a href="https://www.patreon.com/cw/ahmedanjum30">Support on Patreon</a></p>
       </div>
     </div>
   </section>
