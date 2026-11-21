@@ -459,10 +459,10 @@
       else say(l.adapter + " switched off. Downloads already running on it carry on until they finish.");
       render();
       var again = rows.querySelectorAll("button.tickbtn")[i];
-      if (again) again.focus();
+      if (again) again.focus({ preventScroll: true });
     });
-    $("w-stop").addEventListener("click", function () { running = false; say(""); render(); $("w-start").focus(); });
-    $("w-start").addEventListener("click", function () { running = true; minutes = 0; say(""); render(); $("w-stop").focus(); });
+    $("w-stop").addEventListener("click", function () { running = false; say(""); render(); $("w-start").focus({ preventScroll: true }); });
+    $("w-start").addEventListener("click", function () { running = true; minutes = 0; say(""); render(); $("w-stop").focus({ preventScroll: true }); });
     $("w-restart").addEventListener("click", function () { minutes = 0; say("Restarted."); render(); });
     $("w-status").addEventListener("click", function () { say("Opens http://127.0.0.1:8080/status in your browser: each connection's live speed."); });
     $("w-log").addEventListener("click", function () { say("Opens the log: which connections are in use, and any that fail."); });
@@ -485,7 +485,7 @@
       var focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#rows button.tickbtn");
       var idx = focused ? Array.prototype.indexOf.call(rows.querySelectorAll("button.tickbtn"), focused) : -1;
       render();
-      if (idx >= 0) rows.querySelectorAll("button.tickbtn")[idx].focus();
+      if (idx >= 0) rows.querySelectorAll("button.tickbtn")[idx].focus({ preventScroll: true });
     }, 1000);
   })();
 </script>
