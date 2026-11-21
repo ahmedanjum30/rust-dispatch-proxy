@@ -8,7 +8,8 @@
 <meta name="keywords" content="combine internet connections, multiple internet connections, bandwidth aggregation, load balance internet, dual WAN, multi-WAN, connection bonding, Windows, SOCKS5 proxy, download faster">
 <meta name="author" content="Ahmad Anjum">
 <link rel="canonical" href="https://ahmedanjum30.github.io/rust-dispatch-proxy/">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#f3f3f3">
+<meta name="color-scheme" content="light">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="rust-dispatch-proxy: use all your internet connections at once">
@@ -21,7 +22,7 @@
 <meta name="twitter:description" content="Combine Ethernet, Wi-Fi and a tethered phone so downloads use them all together. Free for personal use.">
 <meta name="twitter:image" content="https://ahmedanjum30.github.io/rust-dispatch-proxy/status-page.png">
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f81f7'/%3E%3Cpath d='M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23005fb8'/%3E%3Cpath d='M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 
 <script type="application/ld+json">
 {
@@ -63,166 +64,325 @@
 </script>
 
 <style>
+  /* The app's world: a native Windows 11 window in the light theme.
+     Segoe UI, the system accent blue, Windows green for "Running", and the
+     thin group boxes the control panel's Settings section uses. */
   :root {
-    --bg: #ffffff; --bg-soft: #f6f8fa; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0;
-    --accent: #0969da; --accent-fg: #ffffff; --good: #1a7f37; --card: #ffffff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0d1117; --bg-soft: #151b23; --fg: #e6edf3; --muted: #9198a1; --line: #30363d;
-      --accent: #4493f8; --accent-fg: #0d1117; --good: #3fb950; --card: #151b23;
-    }
+    --mica: #f3f3f3;          /* the desktop behind windows */
+    --window: #ffffff;        /* window surface */
+    --layer: #f9f9f9;         /* subtle fill: hover rows, expanders */
+    --stroke: #e5e5e5;        /* card and divider lines */
+    --control: #fbfbfb;       /* button face */
+    --control-stroke: #d1d1d1;
+    --control-bottom: #b9b9b9;/* Win11 buttons are darker at the bottom edge */
+    --text: #1b1b1b;
+    --text-2: #5d5d5d;        /* secondary, 6.6:1 on white */
+    --text-3: #6f6f6f;        /* disabled-looking labels, 5.0:1 on white */
+    --accent: #005fb8;        /* Windows 11 default accent */
+    --accent-hover: #1a6fc2;
+    --accent-press: #004c94;
+    --on-accent: #ffffff;
+    --good: #0f7b0f;          /* "Running" */
+    --radius-window: 8px;
+    --radius-control: 4px;
+    --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --shadow-window: 0 2px 4px rgba(0,0,0,.04), 0 16px 40px -8px rgba(0,0,0,.22);
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  a { color: var(--accent); }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
-  header.top { border-bottom: 1px solid var(--line); }
-  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 60px; }
-  .brand { font-weight: 700; text-decoration: none; color: var(--fg); display: flex; align-items: center; gap: 10px; }
-  .brand svg { width: 26px; height: 26px; flex: none; }
-  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
-  nav a:hover { color: var(--fg); }
-  .hero { padding: 72px 20px 40px; text-align: center; }
-  .hero h1 { font-size: clamp(32px, 5.2vw, 52px); line-height: 1.12; margin: 0 0 18px; letter-spacing: -0.02em; }
-  .hero p.lead { font-size: clamp(18px, 2.2vw, 21px); color: var(--muted); max-width: 720px; margin: 0 auto 30px; }
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .btn { display: inline-block; padding: 13px 22px; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--fg); background: var(--bg-soft); }
-  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-  .btn:hover { filter: brightness(1.07); }
-  .note { font-size: 14px; color: var(--muted); margin-top: 14px; }
-  .shot { margin: 44px auto 0; max-width: 960px; }
-  .shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); display: block; }
-  .shot figcaption { font-size: 14px; color: var(--muted); text-align: center; margin-top: 10px; }
-  section { padding: 56px 0; border-top: 1px solid var(--line); }
-  section h2 { font-size: clamp(26px, 3.4vw, 34px); margin: 0 0 10px; letter-spacing: -0.01em; }
-  section p.sub { color: var(--muted); margin: 0 0 30px; max-width: 760px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 22px; }
-  .card h3 { margin: 0 0 6px; font-size: 18px; }
-  .card p { margin: 0; color: var(--muted); font-size: 16px; }
-  .steps { counter-reset: s; display: grid; gap: 14px; max-width: 760px; padding: 0; list-style: none; }
-  .steps li { counter-increment: s; position: relative; padding: 4px 0 4px 52px; }
-  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-weight: 700; display: grid; place-items: center; }
-  .numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; margin-top: 8px; }
-  .num { text-align: center; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
-  .num b { display: block; font-size: 30px; color: var(--good); }
-  .num span { color: var(--muted); font-size: 15px; }
-  table { border-collapse: collapse; width: 100%; font-size: 16px; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--mica); color: var(--text); font: 16px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { color: var(--accent-press); }
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border-radius: var(--radius-control); }
+  html { scrollbar-color: #8a8a8a var(--mica); }
+  code { font: 0.9em "Cascadia Mono", Consolas, ui-monospace, monospace; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--radius-control); padding: 1px 5px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+  /* ---- buttons, exactly the window's own ---- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 32px; padding: 5px 16px; font: 14px/20px var(--font); color: var(--text); text-decoration: none; background: var(--control); border: 1px solid var(--control-stroke); border-bottom-color: var(--control-bottom); border-radius: var(--radius-control); cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: #f6f6f6; color: var(--text); }
+  .btn:active { background: #f0f0f0; color: #5d5d5d; border-bottom-color: var(--control-stroke); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: #1a6fc2; border-bottom-color: #003e7a; }
+  .btn.primary:hover { background: var(--accent-hover); color: var(--on-accent); }
+  .btn.primary:active { background: var(--accent-press); color: #d4e4f5; }
+  .btn.big { min-height: 40px; padding: 8px 22px; font-size: 15px; }
+  .btn svg { width: 16px; height: 16px; flex: none; }
+
+  /* ---- the tick box, as in the connections list and settings ---- */
+  .tick { width: 18px; height: 18px; flex: none; border-radius: 4px; display: inline-grid; place-items: center; background: var(--accent); }
+  .tick svg { width: 12px; height: 12px; }
+  .tick.off { background: var(--window); border: 1px solid #8a8a8a; }
+  .tick.off svg { display: none; }
+
+  /* ---- header: the window's top line ---- */
+  header.top { background: var(--window); border-bottom: 1px solid var(--stroke); position: sticky; top: 0; z-index: 5; }
+  header.top .wrap { display: flex; align-items: center; gap: 14px; min-height: 56px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 600 17px var(--font-display); color: var(--text); text-decoration: none; }
+  .brand svg { width: 24px; height: 24px; flex: none; }
+  .state { color: var(--good); font-size: 14px; white-space: nowrap; }
+  .state .dot { font-size: 11px; vertical-align: 1px; }
+  .detail { color: var(--text-2); font-size: 14px; white-space: nowrap; }
+  header.top nav { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  @media (max-width: 760px) { header.top .detail, header.top nav .optional { display: none; } }
+  @media (max-width: 460px) { header.top .state { display: none; } }
+
+  /* ---- hero ---- */
+  .hero { padding-top: 64px; padding-bottom: 24px; }
+  .hero-copy { max-width: 760px; }
+  .hero h1 { font: 600 clamp(34px, 5.4vw, 54px)/1.08 var(--font-display); letter-spacing: -0.025em; margin: 0 0 18px; text-wrap: balance; }
+  .hero p.lead { font-size: clamp(17px, 2.1vw, 20px); color: var(--text-2); margin: 0 0 26px; max-width: 64ch; }
+  .hero p.lead strong { color: var(--text); font-weight: 600; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .meta { color: var(--text-2); font-size: 14px; margin: 16px 0 0; }
+
+  /* ---- the window ---- */
+  .window { margin: 48px 0 0; background: var(--window); border: 1px solid #d6d6d6; border-radius: var(--radius-window); box-shadow: var(--shadow-window); overflow: hidden; }
+  .titlebar { display: flex; align-items: center; height: 36px; padding-left: 14px; gap: 10px; font-size: 12px; color: var(--text); user-select: none; }
+  .titlebar svg.app { width: 16px; height: 16px; }
+  .titlebar .caps { margin-left: auto; display: flex; height: 100%; }
+  .titlebar .caps span { width: 46px; display: grid; place-items: center; }
+  .titlebar .caps svg { width: 10px; height: 10px; stroke: var(--text); fill: none; stroke-width: 1; }
+  .w-body { padding: 14px 22px 22px; }
+  .w-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; margin-bottom: 14px; }
+  .w-head b { font: 600 20px var(--font-display); }
+  .w-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .btn:disabled { color: #9d9d9d; background: #f5f5f5; border-color: #e5e5e5; cursor: default; }
+  .w-buttons .gap { width: 8px; }
+  .w-message { min-height: 22px; margin: 0 0 12px; font-size: 14px; color: var(--text); }
+  .w-message.error { color: #c42b1c; }
+  .state.stopped { color: var(--text-2); }
+  .listview button.tickbtn { all: unset; display: inline-grid; cursor: pointer; border-radius: 3px; }
+  .listview button.tickbtn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .listview tbody tr:not(.total):not(.empty):hover { background: #f0f6fc; }
+  .listview tr.empty td { color: var(--text-2); text-align: left; padding: 10px; height: 132px; vertical-align: top; }
+  .w-settings button.row { all: unset; display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 4px 0; cursor: pointer; border-radius: 3px; }
+  .w-settings button.row:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .w-settings button.row[aria-checked="false"] .tick { background: var(--window); border: 1px solid #8a8a8a; }
+  .w-settings button.row[aria-checked="false"] .tick svg { display: none; }
+  .w-caption { padding: 10px 22px; border-top: 1px solid var(--stroke); background: var(--layer); color: var(--text-2); font-size: 13.5px; }
+  .w-label { font-size: 14px; margin-bottom: 6px; }
+  .listview { border: 1px solid #b9b9b9; overflow: hidden; }
+  .listview table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  .listview th { font-weight: 400; color: var(--text); text-align: right; padding: 5px 10px; border-right: 1px solid var(--stroke); white-space: nowrap; }
+  .listview th:last-child { border-right: 0; }
+  .listview td { text-align: right; padding: 3px 10px; white-space: nowrap; }
+  .listview th:nth-child(-n+2), .listview td:nth-child(-n+2) { text-align: left; }
+  .listview td.conn { display: flex; align-items: center; gap: 8px; }
+  .listview .tick { width: 14px; height: 14px; border-radius: 3px; }
+  .listview .tick svg { width: 10px; height: 10px; }
+  .listview tr.off td { color: var(--text-3); }
+  .listview tr.total td { padding-bottom: 46px; }
+  .listview tr.total td:first-child { padding-left: 32px; }
+  @media (max-width: 720px) { .listview .wide { display: none; } }
+  @media (max-width: 520px) { .listview th:last-child, .listview td:last-child { display: none; } .w-body { padding: 12px 14px 18px; } }
+  .w-settings { margin-top: 18px; }
+  .w-settings .row { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 4px 0; }
+
+  /* ---- group boxes: the app's Settings frame, as page sections ---- */
+  main section { padding: 34px 0; }
+  .group { position: relative; border: 1px solid #d6d6d6; border-radius: 3px; padding: 36px 28px 28px; background: var(--window); }
+  .group > h2 { position: absolute; top: -0.85em; left: 18px; margin: 0; padding: 0 8px; background: linear-gradient(var(--mica) 50%, var(--window) 50%); font: 600 clamp(20px, 2.6vw, 26px)/1.4 var(--font-display); letter-spacing: -0.01em; }
+  .group > p.sub { color: var(--text-2); margin: 0 0 22px; max-width: 70ch; }
+
+  /* features as the settings' tick rows */
+  .ticks { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 6px 36px; margin: 0; padding: 0; list-style: none; }
+  .ticks li { display: grid; grid-template-columns: 18px 1fr; align-content: start; gap: 2px 12px; padding: 12px 0; border-bottom: 1px solid var(--stroke); }
+  .ticks .tick { margin-top: 3px; }
+  .ticks b { font-weight: 600; }
+  .ticks p { grid-column: 2; margin: 0; color: var(--text-2); font-size: 15px; }
+
+  /* steps */
+  .steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 4px; max-width: 760px; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 14px; padding: 10px 0; }
+  .steps li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 14px; display: grid; place-items: center; }
+  .result { margin: 22px 0 0; padding: 16px 18px; background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--radius-control); color: var(--text-2); max-width: 760px; }
+  .result strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* "who it's for" as a list view */
   .scroll { overflow-x: auto; }
-  details { border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; background: var(--card); }
-  summary { cursor: pointer; font-weight: 600; }
-  details p { color: var(--muted); margin: 10px 0 2px; }
-  code { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 0.92em; }
-  footer { border-top: 1px solid var(--line); padding: 30px 0 44px; color: var(--muted); font-size: 15px; }
-  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
-  @media (max-width: 640px) { nav a:not(.gh) { display: none; } .hero { padding-top: 48px; } }
+  table.plain { width: 100%; border-collapse: collapse; font-size: 15px; border: 1px solid #b9b9b9; }
+  table.plain th { text-align: left; font-weight: 400; padding: 7px 12px; border-right: 1px solid var(--stroke); border-bottom: 1px solid var(--stroke); white-space: nowrap; }
+  table.plain td { text-align: left; padding: 9px 12px; vertical-align: top; border-bottom: 1px solid var(--stroke); width: 50%; }
+  table.plain tr:last-child td { border-bottom: 0; }
+  table.plain tbody tr:hover { background: var(--layer); }
+
+  /* FAQ as Windows 11 expanders */
+  details { background: var(--layer); border: 1px solid var(--stroke); border-radius: var(--radius-control); margin-bottom: 4px; }
+  summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; align-items: center; gap: 12px; font-weight: 600; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 1.5px solid var(--text); border-bottom: 1.5px solid var(--text); transform: rotate(45deg) translate(-2px, -2px); transition: transform .2s cubic-bezier(.16,1,.3,1); flex: none; }
+  details[open] summary::after { transform: rotate(-135deg) translate(-2px, -2px); }
+  summary:hover { background: #f5f5f5; }
+  details p { margin: 0; padding: 12px 16px 16px; border-top: 1px solid var(--stroke); background: var(--window); color: var(--text-2); }
+
+  .download { text-align: center; }
+  .download .group { padding-top: 40px; }
+  .download .group > p.sub { margin-left: auto; margin-right: auto; }
+  .download .cta { justify-content: center; }
+
+  footer { padding: 26px 0 40px; color: var(--text-2); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+  footer .closing { width: 100%; color: var(--text-3); }
 </style>
 </head>
 <body>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="check" viewBox="0 0 12 12"><path d="M2.2 6.3l2.5 2.4 5.1-5.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="logo" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#005fb8"/><path d="M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="win" viewBox="0 0 16 16"><path d="M1 1h6.5v6.5H1zM8.5 1H15v6.5H8.5zM1 8.5h6.5V15H1zM8.5 8.5H15V15H8.5z" fill="currentColor"/></symbol>
+  <symbol id="gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
+</svg>
+
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="./">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2f81f7"/><path d="M6 10h8M6 16h8M6 22h8M14 10l6 6-6 6M14 16h12" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      rust-dispatch-proxy
-    </a>
-    <nav>
-      <a href="#features">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#faq">FAQ</a>
-      <a class="gh" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">GitHub</a>
+    <a class="brand" href="./"><svg aria-hidden="true"><use href="#logo"/></svg>rust-dispatch-proxy</a>
+    <span class="state"><span class="dot">●</span> Free</span>
+    <span class="detail">v1.5.1 · Windows &amp; Linux</span>
+    <nav aria-label="Main">
+      <a class="btn optional" href="#features">Features</a>
+      <a class="btn optional" href="#faq">FAQ</a>
+      <a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy"><svg aria-hidden="true"><use href="#gh"/></svg>GitHub</a>
     </nav>
   </div>
 </header>
 
 <main>
   <div class="hero wrap">
-    <h1>Use all your internet connections at once</h1>
-    <p class="lead">Ethernet, Wi-Fi and a tethered phone, working together. <strong>rust-dispatch-proxy</strong> spreads your downloads across every connection you have, so you get their combined speed. Free for personal use.</p>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest">Download for Windows</a>
-      <a class="btn" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">View on GitHub</a>
+    <div class="hero-copy">
+      <h1>Use all your internet connections at once</h1>
+      <p class="lead">Ethernet, Wi-Fi and a tethered phone, working together. <strong>rust-dispatch-proxy</strong> spreads your downloads across every connection you have, so you get their combined speed. Free for personal use.</p>
+      <div class="cta">
+        <a class="btn primary big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download for Windows</a>
+        <a class="btn big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy">View on GitHub</a>
+      </div>
+      <p class="meta">One file under 1 MB, no installer · Windows 10 &amp; 11 (x64 and ARM) · Linux command-line version</p>
     </div>
-    <p class="note">One file under 1 MB, no installer · Windows 10 &amp; 11 (x64 and ARM) · Linux command-line version</p>
 
-    <figure class="shot">
-      <img src="status-page.png" width="1405" height="426" alt="Status page: three connections downloading at 57, 91 and 98 Mbit/s, 246 Mbit/s in total">
-      <figcaption>Three home connections of about 85 Mbit/s each, carrying 246 Mbit/s together.</figcaption>
+    <figure class="window" aria-label="The rust-dispatch-proxy control panel with three connections downloading together">
+      <div class="titlebar" aria-hidden="true">
+        <svg class="app"><use href="#logo"/></svg>rust-dispatch-proxy
+        <div class="caps">
+          <span><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></span>
+          <span><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" rx="1"/></svg></span>
+          <span><svg viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></span>
+        </div>
+      </div>
+      <div class="w-body">
+        <div class="w-head">
+          <b>rust-dispatch-proxy</b>
+          <span class="state" id="w-state"><span class="dot">●</span> Running</span>
+          <span class="detail" id="w-detail">v1.5.1 · up 2h 14m · port 8080</span>
+        </div>
+        <div class="w-buttons">
+          <button class="btn" type="button" id="w-start" disabled>Start</button>
+          <button class="btn" type="button" id="w-stop">Stop</button>
+          <button class="btn" type="button" id="w-restart">Restart</button>
+          <span class="gap"></span>
+          <button class="btn" type="button" id="w-status">Open status page</button>
+          <button class="btn" type="button" id="w-log">Open log</button>
+          <button class="btn" type="button" id="w-update">Check for updates</button>
+        </div>
+        <p class="w-message" id="w-message" role="status" aria-live="polite">Try it: untick a connection, or press Stop.</p>
+        <div class="w-label" id="w-label">Connections (untick one to stop using it)</div>
+        <div class="listview">
+          <table aria-labelledby="w-label">
+            <thead><tr><th>Connection</th><th>Adapter</th><th>Download</th><th class="wide">Upload</th><th class="wide">Open</th><th class="wide">Connect</th><th>Downloaded</th></tr></thead>
+            <tbody id="rows">
+              <tr><td class="conn"><span class="tick"><svg><use href="#check"/></svg></span>192.168.1.20</td><td>Ethernet</td><td>88.4 Mbit/s</td><td class="wide">3.1 Mbit/s</td><td class="wide">14</td><td class="wide">12 ms</td><td>2.41 GB</td></tr>
+              <tr><td class="conn"><span class="tick"><svg><use href="#check"/></svg></span>192.168.1.35</td><td>Wi-Fi</td><td>82.7 Mbit/s</td><td class="wide">2.6 Mbit/s</td><td class="wide">13</td><td class="wide">19 ms</td><td>2.18 GB</td></tr>
+              <tr><td class="conn"><span class="tick"><svg><use href="#check"/></svg></span>192.168.42.129</td><td>Phone (USB)</td><td>76.9 Mbit/s</td><td class="wide">1.9 Mbit/s</td><td class="wide">12</td><td class="wide">41 ms</td><td>1.96 GB</td></tr>
+              <tr class="off"><td class="conn"><span class="tick off"><svg><use href="#check"/></svg></span>10.24.0.7</td><td>Wi-Fi 2 (off)</td><td>-</td><td class="wide">-</td><td class="wide"></td><td class="wide"></td><td></td></tr>
+              <tr class="total"><td>Total</td><td></td><td>248.0 Mbit/s</td><td class="wide">7.6 Mbit/s</td><td class="wide">39</td><td class="wide"></td><td>6.55 GB</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="w-settings">
+          <button class="row" type="button" role="checkbox" aria-checked="true"><span class="tick"><svg><use href="#check"/></svg></span>Find my internet connections automatically</button>
+          <button class="row" type="button" role="checkbox" aria-checked="true"><span class="tick"><svg><use href="#check"/></svg></span>Turn on the Windows proxy setting while the proxy runs</button>
+        </div>
+      </div>
+      <figcaption class="w-caption">A working copy of the control panel, with sample connections. Click around.</figcaption>
     </figure>
   </div>
 
   <section id="features">
     <div class="wrap">
-      <h2>Everything handled for you</h2>
-      <p class="sub">Double-click and it works. Behind the scenes it keeps every connection busy and steps around the ones having trouble.</p>
-      <div class="grid">
-        <div class="card"><h3>Finds your connections</h3><p>Uses every adapter that can reach the internet, and adapts when Wi-Fi drops or a cable is plugged in, without interrupting your downloads.</p></div>
-        <div class="card"><h3>One-click control panel</h3><p>Start, stop and see each connection's live speed. Settings in one place, and an option to start when you log in.</p></div>
-        <div class="card"><h3>Nothing to configure</h3><p>Switches the Windows proxy setting on while it runs and off when it stops, so browsers and other apps just use it.</p></div>
-        <div class="card"><h3>Fast failover</h3><p>If a connection is slow to respond, the next one is tried alongside it within a fraction of a second. The first to connect wins.</p></div>
-        <div class="card"><h3>Your traffic, your lines</h3><p>Not a VPN: everything goes straight out of your own connections. No accounts, no servers in between, no tracking.</p></div>
-        <div class="card"><h3>Light and fast</h3><p>Written in Rust. The proxy uses a few MB of memory and can move many gigabits per second, far more than home connections need.</p></div>
+      <div class="group">
+        <h2>Everything handled for you</h2>
+        <p class="sub">Double-click and it works. Behind the scenes it keeps every connection busy and steps around the ones having trouble.</p>
+        <ul class="ticks">
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Finds your connections</b><p>Uses every adapter that can reach the internet, and adapts when Wi-Fi drops or a cable is plugged in, without interrupting your downloads.</p></li>
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Turns the Windows proxy on for you</b><p>Switches the Windows proxy setting on while it runs and off when it stops, so browsers and other apps just use it.</p></li>
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Pick which connections to use</b><p>Untick a connection in the list to stop using it, tick it to use it again. It applies within a second, without a restart.</p></li>
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Fast failover</b><p>If a connection is slow to respond, the next one is tried alongside it within a fraction of a second. The first to connect wins.</p></li>
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Your traffic, your lines</b><p>Not a VPN: everything goes straight out of your own connections. No accounts, no servers in between, no tracking.</p></li>
+          <li><span class="tick"><svg><use href="#check"/></svg></span><b>Light, and keeps itself current</b><p>Written in Rust: a few MB of memory, far faster than home connections need. <em>Check for updates</em> installs new versions in place.</p></li>
+        </ul>
       </div>
     </div>
   </section>
 
   <section id="how">
     <div class="wrap">
-      <h2>How it works</h2>
-      <p class="sub">Windows normally sends everything over a single connection. rust-dispatch-proxy runs on your PC as a local proxy and sends each new connection out over whichever of your links is least busy.</p>
-      <ol class="steps">
-        <li><strong>Connect your internet connections</strong>: for example Ethernet plus Wi-Fi, or a phone over USB.</li>
-        <li><strong>Download <code>proxy-gui.exe</code> and double-click it.</strong> It finds your connections and turns on the Windows proxy setting.</li>
-        <li><strong>Download as usual.</strong> Apps that open several connections, like download managers, torrent clients and browsers, now use all your links together.</li>
-      </ol>
-      <div class="numbers">
-        <div class="num"><b>3</b><span>home connections</span></div>
-        <div class="num"><b>~85 Mbit/s</b><span>each on its own</span></div>
-        <div class="num"><b>246 Mbit/s</b><span>combined, measured</span></div>
+      <div class="group">
+        <h2>How it works</h2>
+        <p class="sub">Windows normally sends everything over a single connection. rust-dispatch-proxy runs on your PC as a local proxy and sends each new connection out over whichever of your links is least busy.</p>
+        <ol class="steps">
+          <li><span><strong>Connect your internet connections</strong>: for example Ethernet plus Wi-Fi, or a phone over USB.</span></li>
+          <li><span><strong>Download <code>proxy-gui.exe</code> and double-click it.</strong> It finds your connections and turns on the Windows proxy setting.</span></li>
+          <li><span><strong>Download as usual.</strong> Apps that open several connections, like download managers, torrent clients and browsers, now use all your links together.</span></li>
+        </ol>
+        <p class="result">Measured at home: three connections of about <strong>85 Mbit/s</strong> each carried <strong>246 Mbit/s</strong> together.</p>
       </div>
     </div>
   </section>
 
   <section id="who">
     <div class="wrap">
-      <h2>Who it's for</h2>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Works great for</th><th>Doesn't speed up</th></tr></thead>
-          <tbody>
-            <tr><td>Download managers (Internet Download Manager and similar)</td><td>A single-stream download (one connection stays on one link)</td></tr>
-            <tr><td>Torrent clients set to use a SOCKS5 proxy</td><td>A single video call or game connection</td></tr>
-            <tr><td>Browsers loading many pages and files, cloud sync, game launchers</td><td>Sites that need one fixed IP address, like some banking sites (use those without the proxy)</td></tr>
-          </tbody>
-        </table>
+      <div class="group">
+        <h2>Who it's for</h2>
+        <div class="scroll">
+          <table class="plain">
+            <thead><tr><th>Works great for</th><th>Doesn't speed up</th></tr></thead>
+            <tbody>
+              <tr><td>Download managers (Internet Download Manager and similar)</td><td>A single-stream download (one connection stays on one link)</td></tr>
+              <tr><td>Torrent clients set to use a SOCKS5 proxy</td><td>A single video call or game connection</td></tr>
+              <tr><td>Browsers loading many pages and files, cloud sync, game launchers</td><td>Sites that need one fixed IP address, like some banking sites (use those without the proxy)</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="faq">
     <div class="wrap">
-      <h2>Questions</h2>
-      <details open><summary>Can I use two internet connections at the same time on Windows?</summary><p>Yes. Windows normally uses one connection at a time. rust-dispatch-proxy spreads your connections across every network adapter that can reach the internet, such as Ethernet, Wi-Fi and a USB-tethered phone, so they're used together.</p></details>
-      <details><summary>Will a single download get faster?</summary><p>Only if the download uses several connections. Each connection goes over one link, so download managers, torrent clients and browsers loading many files benefit the most. A single-stream download stays on one link.</p></details>
-      <details><summary>Is it free?</summary><p>Yes, free for personal and other non-commercial use under the PolyForm Noncommercial License 1.0.0. For commercial use, contact the author on GitHub.</p></details>
-      <details><summary>Do I need to install anything?</summary><p>No. Download one file, <code>proxy-gui.exe</code>, and double-click it. Windows may show a "protected your PC" warning the first time because the app isn't code-signed yet: choose <em>More info → Run anyway</em>.</p></details>
-      <details><summary>Is it a VPN?</summary><p>No. It runs only on your PC and sends traffic straight out of your own connections. Nothing passes through anyone else's server.</p></details>
-      <details><summary>Microsoft Store won't connect while the proxy is on. How do I fix it?</summary><p>Windows blocks its built-in Store apps (Microsoft Store, Xbox and others) from reaching programs on the same PC, such as this proxy. In the control panel, click <strong>Fix</strong> once and approve the administrator prompt. After that they connect normally, and their traffic is spread across your connections too.</p></details>
-      <details><summary>Does it work on Linux?</summary><p>Yes, as a command-line proxy (<code>rust-dispatch-proxy -auto</code>). The control panel is Windows-only.</p></details>
+      <div class="group">
+        <h2>Questions</h2>
+        <details open><summary>Can I use two internet connections at the same time on Windows?</summary><p>Yes. Windows normally uses one connection at a time. rust-dispatch-proxy spreads your connections across every network adapter that can reach the internet, such as Ethernet, Wi-Fi and a USB-tethered phone, so they're used together.</p></details>
+        <details><summary>Will a single download get faster?</summary><p>Only if the download uses several connections. Each connection goes over one link, so download managers, torrent clients and browsers loading many files benefit the most. A single-stream download stays on one link.</p></details>
+        <details><summary>Is it free?</summary><p>Yes, free for personal and other non-commercial use under the PolyForm Noncommercial License 1.0.0. For commercial use, contact the author on GitHub.</p></details>
+        <details><summary>Do I need to install anything?</summary><p>No. Download one file, <code>proxy-gui.exe</code>, and double-click it. Windows may show a "protected your PC" warning the first time because the app isn't code-signed yet: choose <em>More info → Run anyway</em>.</p></details>
+        <details><summary>Is it a VPN?</summary><p>No. It runs only on your PC and sends traffic straight out of your own connections. Nothing passes through anyone else's server.</p></details>
+        <details><summary>Microsoft Store won't connect while the proxy is on. How do I fix it?</summary><p>Windows blocks its built-in Store apps (Microsoft Store, Xbox and others) from reaching programs on the same PC, such as this proxy. In the control panel, click <strong>Allow</strong> once and approve the administrator prompt. After that they connect normally, and their traffic is spread across your connections too.</p></details>
+        <details><summary>Does it work on Linux?</summary><p>Yes, as a command-line proxy (<code>rust-dispatch-proxy -auto</code>). The control panel is Windows-only.</p></details>
+      </div>
     </div>
   </section>
 
-  <section id="download">
-    <div class="wrap" style="text-align:center">
-      <h2>Try it now</h2>
-      <p class="sub" style="margin-left:auto;margin-right:auto">Get <code>proxy-gui</code> for Windows (x64, or aarch64 for ARM laptops) from the latest release.</p>
-      <div class="cta">
-        <a class="btn primary" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest">Download the latest release</a>
-        <a class="btn" href="https://www.patreon.com/cw/ahmedanjum30">Support on Patreon</a>
+  <section id="download" class="download">
+    <div class="wrap">
+      <div class="group">
+        <h2>Try it now</h2>
+        <p class="sub">Get <code>proxy-gui</code> for Windows (x64, or aarch64 for ARM laptops) from the latest release.</p>
+        <div class="cta">
+          <a class="btn primary big" href="https://github.com/ahmedanjum30/rust-dispatch-proxy/releases/latest"><svg aria-hidden="true"><use href="#win"/></svg>Download the latest release</a>
+          <a class="btn big" href="https://www.patreon.com/cw/ahmedanjum30">Support on Patreon</a>
+        </div>
       </div>
     </div>
   </section>
@@ -232,8 +392,102 @@
   <div class="wrap">
     <span>© 2026 Ahmad Anjum · Free for personal use (<a href="https://github.com/ahmedanjum30/rust-dispatch-proxy/blob/main/LICENSE">PolyForm Noncommercial 1.0.0</a>)</span>
     <span><a href="https://github.com/ahmedanjum30/rust-dispatch-proxy">GitHub</a> · <a href="https://github.com/ahmedanjum30/rust-dispatch-proxy/discussions">Discussions</a> · <a href="https://www.patreon.com/cw/ahmedanjum30">Patreon</a></span>
+    <span class="closing">Closing this page doesn't stop the proxy.</span>
   </div>
 </footer>
 
+<script>
+  // A working copy of the control panel: the same buttons, tick boxes and
+  // messages as proxy-gui.exe, with sample connections whose speeds move
+  // once a second like the real one.
+  (function () {
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var links = [
+      { ip: "192.168.1.20", adapter: "Ethernet", base: 88.4, up: 3.1, open: 14, ms: 12, gb: 2.41, on: true },
+      { ip: "192.168.1.35", adapter: "Wi-Fi", base: 82.7, up: 2.6, open: 13, ms: 19, gb: 2.18, on: true },
+      { ip: "192.168.42.129", adapter: "Phone (USB)", base: 76.9, up: 1.9, open: 12, ms: 41, gb: 1.96, on: true },
+      { ip: "10.24.0.7", adapter: "Wi-Fi 2", base: 61.5, up: 1.4, open: 11, ms: 23, gb: 0.00, on: false }
+    ];
+    var running = true, minutes = 2 * 60 + 14, seconds = 0;
+    var $ = function (id) { return document.getElementById(id); };
+    var rows = $("rows"), msg = $("w-message");
+    links.forEach(function (l) { l.now = l.base; });
+
+    function say(text, error) { msg.textContent = text; msg.classList.toggle("error", !!error); }
+    function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+    function tick(on, label) {
+      return '<button class="tickbtn" type="button" role="checkbox" aria-checked="' + on + '" aria-label="Use ' + esc(label) + '">' +
+        '<span class="tick' + (on ? "" : " off") + '"><svg><use href="#check"/></svg></span></button>';
+    }
+
+    function render() {
+      $("w-start").disabled = running;
+      $("w-stop").disabled = $("w-restart").disabled = $("w-status").disabled = !running;
+      var state = $("w-state");
+      state.innerHTML = '<span class="dot">●</span> ' + (running ? "Running" : "Stopped");
+      state.classList.toggle("stopped", !running);
+      $("w-detail").textContent = running ? "v1.5.1 · up " + Math.floor(minutes / 60) + "h " + (minutes % 60) + "m · port 8080" : "";
+      $("w-label").textContent = running ? "Connections (untick one to stop using it)" : "Connections: the proxy isn't running. Press Start.";
+      if (!running) { rows.innerHTML = '<tr class="empty"><td colspan="7"></td></tr>'; return; }
+
+      var html = "", down = 0, up = 0, open = 0, gb = 0;
+      links.forEach(function (l, i) {
+        if (!l.on) {
+          html += '<tr class="off"><td class="conn">' + tick(false, l.adapter) + l.ip + "</td><td>" + esc(l.adapter) +
+            ' (off)</td><td>-</td><td class="wide">-</td><td class="wide"></td><td class="wide"></td><td></td></tr>';
+          return;
+        }
+        down += l.now; up += l.up; open += l.open; gb += l.gb;
+        html += '<tr><td class="conn">' + tick(true, l.adapter) + l.ip + "</td><td>" + esc(l.adapter) + "</td><td>" + l.now.toFixed(1) +
+          ' Mbit/s</td><td class="wide">' + l.up.toFixed(1) + ' Mbit/s</td><td class="wide">' + l.open + '</td><td class="wide">' + l.ms +
+          " ms</td><td>" + l.gb.toFixed(2) + " GB</td></tr>";
+      });
+      html += '<tr class="total"><td>Total</td><td></td><td>' + down.toFixed(1) + ' Mbit/s</td><td class="wide">' + up.toFixed(1) +
+        ' Mbit/s</td><td class="wide">' + open + '</td><td class="wide"></td><td>' + gb.toFixed(2) + " GB</td></tr>";
+      rows.innerHTML = html;
+    }
+
+    rows.addEventListener("click", function (e) {
+      var b = e.target.closest("button.tickbtn");
+      if (!b) return;
+      var i = Array.prototype.indexOf.call(rows.querySelectorAll("button.tickbtn"), b);
+      var l = links[i];
+      l.on = !l.on;
+      l.now = l.base;
+      if (!links.some(function (x) { return x.on; })) say("No connection is ticked, so the proxy has nothing to use.", true);
+      else if (l.on) say(l.adapter + " switched on.");
+      else say(l.adapter + " switched off. Downloads already running on it carry on until they finish.");
+      render();
+      var again = rows.querySelectorAll("button.tickbtn")[i];
+      if (again) again.focus();
+    });
+    $("w-stop").addEventListener("click", function () { running = false; say(""); render(); $("w-start").focus(); });
+    $("w-start").addEventListener("click", function () { running = true; minutes = 0; say(""); render(); $("w-stop").focus(); });
+    $("w-restart").addEventListener("click", function () { minutes = 0; say("Restarted."); render(); });
+    $("w-status").addEventListener("click", function () { say("Opens http://127.0.0.1:8080/status in your browser: each connection's live speed."); });
+    $("w-log").addEventListener("click", function () { say("Opens the log: which connections are in use, and any that fail."); });
+    $("w-update").addEventListener("click", function () { say("Checking for updates..."); setTimeout(function () { say("You have the latest version (v1.5.1)."); }, 700); });
+    Array.prototype.forEach.call(document.querySelectorAll(".w-settings button.row"), function (b) {
+      b.addEventListener("click", function () { b.setAttribute("aria-checked", b.getAttribute("aria-checked") === "true" ? "false" : "true"); });
+    });
+
+    render();
+    setInterval(function () {
+      if (!running) return;
+      seconds++;
+      if (seconds % 60 === 0) minutes++;
+      links.forEach(function (l) {
+        if (!l.on) return;
+        if (!still) l.now = Math.max(0, l.base + (Math.random() - 0.5) * l.base * 0.12);
+        l.gb += l.now / 8 / 1000;
+      });
+      // Re-render without stealing focus from a tick box being used.
+      var focused = document.activeElement && document.activeElement.closest && document.activeElement.closest("#rows button.tickbtn");
+      var idx = focused ? Array.prototype.indexOf.call(rows.querySelectorAll("button.tickbtn"), focused) : -1;
+      render();
+      if (idx >= 0) rows.querySelectorAll("button.tickbtn")[idx].focus();
+    }, 1000);
+  })();
+</script>
 </body>
 </html>
