@@ -83,7 +83,52 @@ jobs:
           merge-multiple: true
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt
+
+      # The notes: this version's section of CHANGELOG.md, then how to install.
+      # GitHub adds the list of changes below them.
+      - uses: actions/checkout@v7
+        with:
+          path: source
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+      - name: Write the release notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # The lines under "## [<version>]", up to the next version's heading.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' source/CHANGELOG.md > changes.md
+          {
+            echo "## What's new in $version"
+            if grep -q '[^[:space:]]' changes.md; then
+              cat changes.md
+            else
+              echo "::warning::CHANGELOG.md has no entry for $version" >&2
+            fi
+          } > notes.md
+          cat >> notes.md <<'EOF'
+
+          ## Install
+
+          **Windows, the easy way:** download **proxy-gui-__TAG__-x86_64-pc-windows-msvc.exe** below (or the `aarch64` one for an ARM laptop), save it anywhere and double-click it. Everything is in that one file, under 1 MB: the proxy and its control panel, with nothing else to download. It updates itself — press **Check for updates**.
+
+          > **Windows says "Windows protected your PC"?** Click **More info**, then **Run anyway**. The proxy isn't code-signed yet, so Windows doesn't know the publisher. The file is the one built by this repository's release workflow; you can check it against `SHA256SUMS.txt`.
+
+          **From a terminal, or for TUN mode:** the **`-x86_64-pc-windows-msvc.zip`** (or `aarch64`) has `rust-dispatch-proxy.exe`, `wintun.dll` for TUN mode and the licenses. Unzip it and run `rust-dispatch-proxy.exe` from a terminal.
+
+          **Linux:** the **`-x86_64-unknown-linux-gnu.tar.gz`** has the command line. Unpack it and run `./rust-dispatch-proxy`.
+
+          Use the `x86_64` downloads for most PCs and `aarch64` for ARM.
+          EOF
+          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" notes.md
+          cat notes.md
+
       - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
+          # This version's changes and how to install, above the generated list.
+          body_path: notes.md
           generate_release_notes: true
